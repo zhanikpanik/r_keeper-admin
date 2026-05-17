@@ -6,6 +6,8 @@ export interface FloorTable {
   shape: TableShape;
   x: number;
   y: number;
+  width: number;  // grid cells (min 2)
+  height: number; // grid cells (min 2)
   seats: number;
 }
 

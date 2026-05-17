@@ -7,36 +7,40 @@ import { AddTableModal } from './AddTableModal';
 import type { FloorTable } from '../../../types/floor-plan';
 import { toast } from 'sonner';
 
-const CELL_SIZE = 48;
+const CELL_SIZE = 36;
 const GRID_COLS = 24;
 const GRID_ROWS = 14;
-const TABLE_CELLS = 2; // Tables are 2x2 cells
+const MIN_CELLS = 2;
 
 export function FloorPlanGrid() {
   const gridRef = useRef<HTMLDivElement>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<FloorTable | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
+  const [resizingTableId, setResizingTableId] = useState<string | null>(null);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const draggedTableRef = useRef<FloorTable | null>(null);
+  const resizedTableRef = useRef<FloorTable | null>(null);
   const [newTableId, setNewTableId] = useState<string | null>(null);
 
   const {
     tables,
     zones,
     moveTable,
+    resizeTable,
     addTable,
+    removeTable,
     updateTable,
     saveToStorage,
     getNextTableNumber,
     syncToSupabase,
   } = useFloorPlan();
 
+  // ── Drag handling ──
   const handleMouseDown = useCallback((e: React.MouseEvent, table: FloorTable) => {
     e.preventDefault();
     e.stopPropagation();
 
-    // Clear new table highlight when user starts dragging
     if (newTableId === table.id) {
       setNewTableId(null);
     }
@@ -51,7 +55,6 @@ export function FloorPlanGrid() {
     draggedTableRef.current = table;
     setDraggingTableId(table.id);
 
-    // Set initial CSS variable position
     const tableEl = document.querySelector(`[data-table-id="${table.id}"]`) as HTMLElement;
     if (tableEl) {
       tableEl.style.setProperty('--drag-x', '0px');
@@ -67,7 +70,6 @@ export function FloorPlanGrid() {
       const rawX = e.clientX - gridRect.left - dragOffsetRef.current.x;
       const rawY = e.clientY - gridRect.top - dragOffsetRef.current.y;
 
-      // Direct DOM update via CSS variables - no React re-render!
       const tableEl = document.querySelector(`[data-table-id="${draggingTableId}"]`) as HTMLElement;
       if (tableEl) {
         const baseX = draggedTableRef.current.x * CELL_SIZE;
@@ -84,9 +86,10 @@ export function FloorPlanGrid() {
       const rawX = e.clientX - gridRect.left - dragOffsetRef.current.x;
       const rawY = e.clientY - gridRect.top - dragOffsetRef.current.y;
 
-      // Snap to grid
-      const snappedX = Math.max(0, Math.min(GRID_COLS - TABLE_CELLS, Math.round(rawX / CELL_SIZE)));
-      const snappedY = Math.max(0, Math.min(GRID_ROWS - TABLE_CELLS, Math.round(rawY / CELL_SIZE)));
+      const tw = draggedTableRef.current.width || 2;
+      const th = draggedTableRef.current.height || 2;
+      const snappedX = Math.max(0, Math.min(GRID_COLS - tw, Math.round(rawX / CELL_SIZE)));
+      const snappedY = Math.max(0, Math.min(GRID_ROWS - th, Math.round(rawY / CELL_SIZE)));
 
       moveTable(draggingTableId, snappedX, snappedY);
       setDraggingTableId(null);
@@ -104,6 +107,72 @@ export function FloorPlanGrid() {
     };
   }, [draggingTableId, moveTable]);
 
+  // ── Resize handling ──
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent, table: FloorTable) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizedTableRef.current = table;
+    setResizingTableId(table.id);
+  }, []);
+
+  useEffect(() => {
+    const handleResizeMove = (e: MouseEvent) => {
+      if (!resizingTableId || !gridRef.current || !resizedTableRef.current) return;
+
+      const gridRect = gridRef.current.getBoundingClientRect();
+      const table = resizedTableRef.current;
+      const mouseX = e.clientX - gridRect.left;
+      const mouseY = e.clientY - gridRect.top;
+
+      // Calculate new width/height in cells from table origin
+      const newW = Math.max(MIN_CELLS, Math.round((mouseX - table.x * CELL_SIZE) / CELL_SIZE));
+      const newH = Math.max(MIN_CELLS, Math.round((mouseY - table.y * CELL_SIZE) / CELL_SIZE));
+
+      // Clamp to grid bounds
+      const clampedW = Math.min(newW, GRID_COLS - table.x);
+      const clampedH = Math.min(newH, GRID_ROWS - table.y);
+
+      // Live DOM update for smooth feedback
+      const tableEl = document.querySelector(`[data-table-id="${resizingTableId}"]`) as HTMLElement;
+      if (tableEl) {
+        tableEl.style.width = `${clampedW * CELL_SIZE}px`;
+        tableEl.style.height = `${clampedH * CELL_SIZE}px`;
+        // Update border-radius for circles
+        if (table.shape === 'circle') {
+          tableEl.style.borderRadius = `${Math.min(clampedW, clampedH) * CELL_SIZE / 2}px`;
+        }
+      }
+    };
+
+    const handleResizeUp = (e: MouseEvent) => {
+      if (!resizingTableId || !gridRef.current || !resizedTableRef.current) return;
+
+      const gridRect = gridRef.current.getBoundingClientRect();
+      const table = resizedTableRef.current;
+      const mouseX = e.clientX - gridRect.left;
+      const mouseY = e.clientY - gridRect.top;
+
+      const newW = Math.max(MIN_CELLS, Math.round((mouseX - table.x * CELL_SIZE) / CELL_SIZE));
+      const newH = Math.max(MIN_CELLS, Math.round((mouseY - table.y * CELL_SIZE) / CELL_SIZE));
+      const clampedW = Math.min(newW, GRID_COLS - table.x);
+      const clampedH = Math.min(newH, GRID_ROWS - table.y);
+
+      resizeTable(resizingTableId, clampedW, clampedH);
+      setResizingTableId(null);
+      resizedTableRef.current = null;
+    };
+
+    if (resizingTableId) {
+      window.addEventListener('mousemove', handleResizeMove, { passive: true });
+      window.addEventListener('mouseup', handleResizeUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleResizeMove);
+      window.removeEventListener('mouseup', handleResizeUp);
+    };
+  }, [resizingTableId, resizeTable]);
+
   const handleAddTable = useCallback((tableData: {
     name: string;
     shape: 'square' | 'circle';
@@ -112,7 +181,6 @@ export function FloorPlanGrid() {
     setNewTableId(newTable.id);
     toast.success(`Стол ${newTable.name} добавлен`);
 
-    // Clear the highlight after 5 seconds
     setTimeout(() => {
       setNewTableId((current) => (current === newTable.id ? null : current));
     }, 5000);
@@ -131,6 +199,11 @@ export function FloorPlanGrid() {
     setEditingTable(table);
     setIsModalOpen(true);
   }, []);
+
+  const handleDeleteTable = useCallback((table: FloorTable) => {
+    removeTable(table.id);
+    toast.success(`Стол ${table.name} удалён`);
+  }, [removeTable]);
 
   const handleSave = useCallback(() => {
     saveToStorage();
@@ -181,9 +254,12 @@ export function FloorPlanGrid() {
             key={table.id}
             table={table}
             isDragging={draggingTableId === table.id}
+            isResizing={resizingTableId === table.id}
             isNew={newTableId === table.id}
             onMouseDown={handleMouseDown}
+            onResizeMouseDown={handleResizeMouseDown}
             onDoubleClick={handleTableDoubleClick}
+            onDelete={handleDeleteTable}
           />
         ))}
       </div>

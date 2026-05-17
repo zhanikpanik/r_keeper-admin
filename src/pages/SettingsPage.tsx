@@ -1,8 +1,233 @@
+import { useState, useEffect } from 'react';
+import { X, Plus } from 'lucide-react';
+import { toast } from 'sonner';
+import { useVenue, useUpdateVenue } from '@/hooks/useVenueSettings';
+import {
+  useTransactionCategories,
+  useAddCategory,
+  useDeleteCategory,
+} from '@/hooks/useTransactionCategories';
+import { VENUE_ID } from '@/lib/supabase';
+
 export function SettingsPage() {
+  const { data: venue, isLoading, isError, error } = useVenue();
+  const updateVenue = useUpdateVenue();
+
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    if (venue) {
+      setName(venue.name ?? '');
+      setAddress(venue.address ?? '');
+      setPhone(venue.phone ?? '');
+    }
+  }, [venue]);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    await updateVenue.mutateAsync({ name, address, phone });
+  }
+
   return (
-    <div className="p-8">
-      <h2 className="text-2xl font-bold mb-6">Настройки</h2>
-      <p className="text-muted-foreground">Скоро...</p>
+    <div className="p-8 max-w-xl">
+      <h2 className="text-2xl font-bold mb-2">Настройки</h2>
+      <p className="text-sm text-muted-foreground mb-6">
+        Профиль точки в таблице <code className="text-xs bg-muted px-1 rounded">venues</code>.
+      </p>
+
+      <div className="text-xs text-muted-foreground mb-4 font-mono break-all">
+        venue_id: {VENUE_ID}
+      </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+
+      {isError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 mb-6">
+          <p className="font-medium mb-1">Не удалось загрузить venues</p>
+          <p className="text-xs opacity-90">{(error as Error)?.message}</p>
+          <p className="text-xs mt-2 text-muted-foreground">
+            Убедитесь, что в Supabase есть таблица venues и строка с id = VITE_VENUE_ID.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && !isError && venue && (
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Название</label>
+            <input
+              className="mt-1 w-full px-3 py-2 border rounded-lg text-sm bg-background"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Адрес</label>
+            <input
+              className="mt-1 w-full px-3 py-2 border rounded-lg text-sm bg-background"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Телефон</label>
+            <input
+              className="mt-1 w-full px-3 py-2 border rounded-lg text-sm bg-background"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
+          {updateVenue.isSuccess && (
+            <p className="text-sm text-green-600">Сохранено</p>
+          )}
+          {updateVenue.isError && (
+            <p className="text-sm text-destructive">{(updateVenue.error as Error)?.message}</p>
+          )}
+          <button
+            type="submit"
+            disabled={updateVenue.isPending}
+            className="px-4 py-2 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+          >
+            {updateVenue.isPending ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </form>
+      )}
+
+      <hr className="my-8 border-muted/30" />
+      <TransactionCategoriesSection />
+    </div>
+  );
+}
+
+// ─── Transaction Categories ──────────────────────────────────────────────────
+
+function TransactionCategoriesSection() {
+  const { data: categories = [], isLoading, isError } = useTransactionCategories();
+  const addCat = useAddCategory();
+  const deleteCat = useDeleteCategory();
+
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState<'expense' | 'income'>('expense');
+
+  async function handleAdd() {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    try {
+      await addCat.mutateAsync({ name: trimmed, type: newType });
+      setNewName('');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось создать');
+    }
+  }
+
+  const expenseCats = categories.filter((c) => c.type === 'expense');
+  const incomeCats = categories.filter((c) => c.type === 'income');
+
+  return (
+    <div>
+      <h3 className="text-lg font-bold mb-1">Категории транзакций</h3>
+      <p className="text-sm text-muted-foreground mb-5">
+        Категории для расхода и прихода в кассовых сменах. Инкассация не требует категории.
+      </p>
+
+      {/* Add form */}
+      <div className="flex items-end gap-2 mb-6">
+        <div className="flex-1 min-w-0">
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Название</label>
+          <input
+            className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
+            placeholder="Хоз. расходы"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">Тип</label>
+          <select
+            className="px-3 py-2 border rounded-lg text-sm bg-background outline-none"
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as 'expense' | 'income')}
+          >
+            <option value="expense">Расход</option>
+            <option value="income">Приход</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          disabled={addCat.isPending || !newName.trim()}
+          onClick={handleAdd}
+          className="flex items-center gap-1 px-4 py-2 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+        >
+          <Plus className="w-4 h-4" />
+          Добавить
+        </button>
+      </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+      {isError && <p className="text-sm text-destructive">Не удалось загрузить категории</p>}
+
+      <div className="grid grid-cols-2 gap-8">
+        <CategoryList
+          title="Расход"
+          items={expenseCats}
+          onDelete={async (id) => {
+            try { await deleteCat.mutateAsync(id); }
+            catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Ошибка'); }
+          }}
+          deleting={deleteCat.isPending}
+        />
+        <CategoryList
+          title="Приход"
+          items={incomeCats}
+          onDelete={async (id) => {
+            try { await deleteCat.mutateAsync(id); }
+            catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Ошибка'); }
+          }}
+          deleting={deleteCat.isPending}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CategoryList({
+  title,
+  items,
+  onDelete,
+  deleting,
+}: {
+  title: string;
+  items: { id: string; name: string }[];
+  onDelete: (id: string) => void;
+  deleting: boolean;
+}) {
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-muted-foreground mb-2">{title}</h4>
+      {items.length === 0 && (
+        <p className="text-xs text-muted-foreground">Нет категорий</p>
+      )}
+      <div className="space-y-1">
+        {items.map((c) => (
+          <div
+            key={c.id}
+            className="group flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-muted/10 transition-colors"
+          >
+            <span className="text-sm">{c.name}</span>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => onDelete(c.id)}
+              className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

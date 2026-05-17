@@ -18,6 +18,7 @@ export interface RecipeItem {
   ingredient_id: string;
   ingredient_name: string;
   ingredient_price: number;
+  ingredient_unit: string | null;
   quantity: number;
   unit: string;
 }
@@ -43,6 +44,7 @@ export interface Ingredient {
   id: string;
   name: string;
   price: number;
+  unit: string | null;
 }
 
 async function fetchDish(id: string): Promise<DishDetail> {
@@ -66,7 +68,7 @@ async function fetchDishRecipe(dishId: string): Promise<RecipeItem[]> {
   const ingIds = data.map((r: any) => r.ingredient_id);
   const { data: ings } = await supabase
     .from('products')
-    .select('id, name, price')
+    .select('id, name, price, unit')
     .in('id', ingIds);
 
   return data.map((r: any) => {
@@ -75,6 +77,7 @@ async function fetchDishRecipe(dishId: string): Promise<RecipeItem[]> {
       ...r,
       ingredient_name: ing?.name || '—',
       ingredient_price: ing?.price || 0,
+      ingredient_unit: ing?.unit || null,
     };
   });
 }
@@ -127,11 +130,60 @@ async function fetchAllModifierGroups(): Promise<ModifierGroup[]> {
 async function fetchIngredients(): Promise<Ingredient[]> {
   const { data } = await supabase
     .from('products')
-    .select('id, name, price')
+    .select('id, name, price, unit')
     .eq('venue_id', VENUE_ID)
     .eq('type', 'ingredient')
     .order('name');
   return (data || []) as Ingredient[];
+}
+
+async function fetchDishModifierIngredients(
+  dishId: string,
+  workshopIdOverride?: string | null
+): Promise<Ingredient[]> {
+  let workshopId = workshopIdOverride ?? null;
+
+  if (!workshopId) {
+    const { data: dish, error: dishErr } = await supabase
+      .from('products')
+      .select('workshop_id')
+      .eq('id', dishId)
+      .maybeSingle();
+    if (dishErr) throw dishErr;
+    workshopId = (dish as { workshop_id?: string | null } | null)?.workshop_id ?? null;
+  }
+
+  if (!workshopId) return [];
+
+  const { data: wwRows, error: wwErr } = await supabase
+    .from('workshop_warehouses')
+    .select('warehouse_id')
+    .eq('workshop_id', workshopId);
+  if (wwErr) throw wwErr;
+
+  const warehouseIds = [...new Set((wwRows || []).map((r) => r.warehouse_id as string).filter(Boolean))];
+  if (warehouseIds.length === 0) return [];
+
+  const { data: stockRows, error: stockErr } = await supabase
+    .from('stock_items')
+    .select('product_id')
+    .in('warehouse_id', warehouseIds)
+    .gt('quantity', 0);
+  if (stockErr) throw stockErr;
+
+  const ingredientIds = [...new Set((stockRows || []).map((r) => r.product_id as string).filter(Boolean))];
+  if (ingredientIds.length === 0) return [];
+
+  const { data: rows, error } = await supabase
+    .from('products')
+    .select('id, name, price, unit')
+    .eq('venue_id', VENUE_ID)
+    .eq('type', 'ingredient')
+    .in('id', ingredientIds)
+    .order('name');
+
+  if (error) throw error;
+  return (rows || []) as Ingredient[];
 }
 
 export function useDish(id: string | undefined) {
@@ -174,6 +226,18 @@ export function useIngredients() {
   });
 }
 
+export function useDishModifierIngredients(
+  dishId: string | undefined,
+  workshopIdOverride?: string | null
+) {
+  return useQuery({
+    queryKey: ['dish-modifier-ingredients', dishId ?? 'none', workshopIdOverride ?? 'auto'],
+    queryFn: () => fetchDishModifierIngredients(dishId!, workshopIdOverride),
+    enabled: Boolean(dishId),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useInvalidateDish() {
   const qc = useQueryClient();
   return {
@@ -181,6 +245,7 @@ export function useInvalidateDish() {
       qc.invalidateQueries({ queryKey: ['dish', id] });
       qc.invalidateQueries({ queryKey: ['dish-recipe', id] });
       qc.invalidateQueries({ queryKey: ['dish-modifiers', id] });
+      qc.invalidateQueries({ queryKey: ['dish-modifier-ingredients', id] });
       qc.invalidateQueries({ queryKey: ['all-modifier-groups'] });
       qc.invalidateQueries({ queryKey: ['dishes'] });
     },

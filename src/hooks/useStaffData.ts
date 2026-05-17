@@ -5,7 +5,7 @@ export interface StaffMember {
   id: string;
   name: string;
   pin: string;
-  role: 'owner' | 'manager' | 'cashier';
+  role: 'owner' | 'manager' | 'cashier' | 'waiter';
   email: string | null;
   is_active: boolean;
   last_session_at: string | null;

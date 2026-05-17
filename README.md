@@ -71,3 +71,7 @@ export default defineConfig([
   },
 ])
 ```
+
+## Supabase and POS
+
+Admin and the Expo POS app should use the **same** Supabase project. Copy `VITE_SUPABASE_*` from the POS `EXPO_PUBLIC_*` variables. See [docs/inventory-admin-alignment.md](docs/inventory-admin-alignment.md).

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import pencilIcon from '@/assets/icons/pencil.svg';
 import crossIcon from '@/assets/icons/cross.svg';
 import searchIcon from '@/assets/icons/search.svg';
-import { supabase, VENUE_ID } from '@/lib/supabase';
+import { supabase, VENUE_ID, ORG_ID } from '@/lib/supabase';
 import { useStaff, useInvalidateStaff } from '@/hooks/useStaffData';
 import type { StaffMember } from '@/hooks/useStaffData';
 
@@ -10,15 +10,20 @@ const ROLES: { value: StaffMember['role']; label: string }[] = [
   { value: 'owner', label: 'Владелец' },
   { value: 'manager', label: 'Менеджер' },
   { value: 'cashier', label: 'Кассир' },
+  { value: 'waiter', label: 'Официант' },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
   owner: 'Владелец',
   manager: 'Менеджер',
   cashier: 'Кассир',
+  waiter: 'Официант',
 };
 
 const generatePin = () => String(Math.floor(1000 + Math.random() * 9000));
+
+/** Same pattern as Menu: grid + subgrid; actions column fits icons */
+const STAFF_GRID_TEMPLATE = 'minmax(160px,2fr) minmax(100px,1fr) minmax(160px,2fr) 96px minmax(130px,1.2fr) 80px';
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—';
@@ -28,7 +33,12 @@ function formatDate(dateStr: string | null): string {
 }
 
 export function Staff() {
-  const { data: staff = [] } = useStaff();
+  const {
+    data: staff = [],
+    isPending,
+    isError,
+    error: staffError,
+  } = useStaff();
   const { invalidate } = useInvalidateStaff();
 
   const [search, setSearch] = useState('');
@@ -38,7 +48,6 @@ export function Staff() {
   const [editData, setEditData] = useState<Partial<StaffMember>>({});
   const [newStaff, setNewStaff] = useState({ name: '', email: '', pin: generatePin(), role: 'cashier' as StaffMember['role'] });
 
-  const ORG_ID = '00000000-0000-0000-0000-000000000001';
 
   const filtered = staff
     .filter(s => !roleFilter || s.role === roleFilter)
@@ -49,6 +58,8 @@ export function Staff() {
              s.pin.includes(q) ||
              (s.email || '').toLowerCase().includes(q);
     });
+
+  const showEmptyList = !isPending && !isError && filtered.length === 0;
 
   async function handleAdd() {
     if (!newStaff.name.trim()) return;
@@ -196,105 +207,152 @@ export function Staff() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="-mx-3">
-        {/* Header */}
-        <div className="flex items-center pt-3 pb-2 px-3 text-sm font-medium text-muted-foreground sticky top-0 bg-white z-10">
-          <div className="flex-[2] min-w-0">Имя</div>
-          <div className="flex-[1] min-w-0">Должность</div>
-          <div className="flex-[2] min-w-0">Email</div>
-          <div className="flex-[0.6] text-center">PIN</div>
-          <div className="flex-[1.2] text-center">Последний вход</div>
-          <div className="w-16"></div>
+      <div
+        className="-mx-3 w-fit"
+        style={{ display: 'grid', gridTemplateColumns: STAFF_GRID_TEMPLATE }}
+      >
+        <div className="col-span-6 grid grid-cols-subgrid items-center pt-4 pb-2 px-3 text-sm font-semibold text-muted-foreground sticky top-0 z-10 bg-white">
+          <div className="pr-6 min-w-0">Имя</div>
+          <div className="pr-6 min-w-0">Должность</div>
+          <div className="pr-6 min-w-0">Email</div>
+          <div className="pr-6 text-center">PIN</div>
+          <div className="pr-6 text-center">Последний вход</div>
+          <div />
         </div>
 
-        {/* Rows */}
-        <div>
-          {filtered.map((member) => (
+        <div className="col-span-6 grid grid-cols-subgrid">
+          {isPending && (
+            <div className="col-span-6 py-12 text-center text-sm text-muted-foreground">
+              Загрузка…
+            </div>
+          )}
+          {isError && (
+            <div className="col-span-6 py-12 text-center text-sm text-destructive">
+              {staffError instanceof Error ? staffError.message : 'Не удалось загрузить'}
+            </div>
+          )}
+          {!isPending && !isError && filtered.map((member) => (
             <div
               key={member.id}
-              className={`group rounded-lg hover:bg-[#EFF0F4] ${!member.is_active ? 'opacity-50' : ''} transition-colors`}
+              className={`col-span-6 grid grid-cols-subgrid group hover:bg-[#EFF0F4] even:bg-muted/10 transition-colors ${!member.is_active ? 'opacity-50' : ''}`}
             >
               {editingId === member.id ? (
-                <div className="flex items-center py-2 px-3 gap-2">
-                  <div className="flex-[2] min-w-0">
+                <div className="grid grid-cols-subgrid col-span-6 items-center gap-y-1 py-2 px-3">
+                  <div className="min-w-0 pr-6">
                     <input
                       className="w-full px-2 py-1 border rounded text-sm bg-background"
                       value={editData.name || ''}
-                      onChange={(e) => setEditData(d => ({ ...d, name: e.target.value }))}
+                      onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))}
                       autoFocus
                       onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()}
                     />
                   </div>
-                  <div className="flex-[1] min-w-0">
+                  <div className="min-w-0 pr-6">
                     <select
                       className="w-full px-2 py-1 border rounded text-sm bg-background"
                       value={editData.role || 'cashier'}
-                      onChange={(e) => setEditData(d => ({ ...d, role: e.target.value as StaffMember['role'] }))}
+                      onChange={(e) =>
+                        setEditData((d) => ({ ...d, role: e.target.value as StaffMember['role'] }))
+                      }
                     >
-                      {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      {ROLES.map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
-                  <div className="flex-[2] min-w-0">
+                  <div className="min-w-0 pr-6">
                     <input
                       className="w-full px-2 py-1 border rounded text-sm bg-background"
                       value={editData.email || ''}
-                      onChange={(e) => setEditData(d => ({ ...d, email: e.target.value }))}
+                      onChange={(e) => setEditData((d) => ({ ...d, email: e.target.value }))}
                       placeholder="Email"
                     />
                   </div>
-                  <div className="flex-[0.6] text-center">
+                  <div className="pr-6 flex justify-center">
                     <input
-                      className="w-full px-2 py-1 border rounded text-sm bg-background font-mono text-center"
+                      className="w-full max-w-[5.5rem] px-2 py-1 border rounded text-sm bg-background font-mono text-center"
                       value={editData.pin || ''}
-                      onChange={(e) => setEditData(d => ({ ...d, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                      onChange={(e) =>
+                        setEditData((d) => ({
+                          ...d,
+                          pin: e.target.value.replace(/\D/g, '').slice(0, 4),
+                        }))
+                      }
                       maxLength={4}
                     />
                   </div>
-                  <div className="flex-[1.2]"></div>
-                  <div className="flex justify-center gap-1">
-                    <button onClick={handleSaveEdit} className="text-xs text-green-600 font-bold px-2 py-1">✓</button>
-                    <button onClick={() => { setEditingId(null); setEditData({}); }} className="text-xs text-muted-foreground px-2 py-1">✕</button>
+                  <div className="pr-6" />
+                  <div className="flex justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      className="text-sm text-green-600 font-semibold px-2 py-1"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditData({});
+                      }}
+                      className="text-sm text-muted-foreground px-2 py-1"
+                    >
+                      ✕
+                    </button>
                   </div>
-                  <div className="w-16"></div>
                 </div>
               ) : (
-                <div className="flex items-center py-3 px-3">
-                  <div className="flex-[2] min-w-0 text-sm truncate">{member.name}</div>
-                  <div className="flex-[1] min-w-0 text-sm text-muted-foreground">{ROLE_LABELS[member.role]}</div>
-                  <div className="flex-[2] min-w-0 text-sm text-muted-foreground truncate">{member.email || '—'}</div>
-                  <div className="flex-[0.6] text-sm text-center font-mono">
+                <div className="grid grid-cols-subgrid col-span-6 items-center py-2 px-3">
+                  <div className="min-w-0 text-sm font-semibold truncate pr-6">{member.name}</div>
+                  <div className="min-w-0 text-sm text-muted-foreground pr-6">
+                    {ROLE_LABELS[member.role] ?? member.role}
+                  </div>
+                  <div className="min-w-0 text-sm text-muted-foreground truncate pr-6">
+                    {member.email || '—'}
+                  </div>
+                  <div className="text-sm text-center font-mono pr-6 flex justify-center">
                     <span
                       className="px-2 py-0.5 rounded select-none cursor-default"
                       style={{ filter: 'blur(7px)', transition: '0.1s' }}
-                      onMouseEnter={(e) => e.currentTarget.style.filter = 'blur(0)'}
-                      onMouseLeave={(e) => e.currentTarget.style.filter = 'blur(7px)'}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.filter = 'blur(0)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.filter = 'blur(7px)';
+                      }}
                     >
                       {member.pin}
                     </span>
                   </div>
-                  <div className="flex-[1.2] text-sm text-center text-muted-foreground">{formatDate(member.last_session_at)}</div>
-                  <div className="w-16 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="text-sm text-center text-muted-foreground pr-6 tabular-nums">
+                    {formatDate(member.last_session_at)}
+                  </div>
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
+                      type="button"
                       onClick={() => startEdit(member)}
                       className="opacity-40 hover:opacity-100 transition-opacity p-1"
                     >
-                      <img src={pencilIcon} className="w-4 h-4" />
+                      <img src={pencilIcon} className="w-4 h-4" alt="" />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDelete(member.id)}
                       className="opacity-40 hover:opacity-100 transition-opacity p-1"
                     >
-                      <img src={crossIcon} className="w-5 h-5" />
+                      <img src={crossIcon} className="w-5 h-5" alt="" />
                     </button>
                   </div>
                 </div>
               )}
             </div>
           ))}
-          {filtered.length === 0 && (
-            <div className="py-12 text-center text-muted-foreground text-sm">
-              Нет сотрудников
+          {showEmptyList && (
+            <div className="col-span-6 py-12 text-center text-sm text-muted-foreground">
+              {search.trim() || roleFilter ? 'Ничего не найдено' : 'Нет сотрудников'}
             </div>
           )}
         </div>

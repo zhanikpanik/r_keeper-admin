@@ -1,0 +1,449 @@
+import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus, X } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  useTransactions,
+  useAddTransaction,
+  useDeleteTransaction,
+  type TransactionType,
+  type CreatableTransactionType,
+  type PaymentMethod,
+} from '@/hooks/useCashTransactions';
+import { useTransactionCategories } from '@/hooks/useTransactionCategories';
+import { useShifts, type CashShift } from '@/hooks/useShiftsData';
+import { matchShiftIdForTimestamp } from '@/lib/matchShiftForTimestamp';
+import { VENUE_ID } from '@/lib/supabase';
+
+const TYPE_LABELS: Record<TransactionType, string> = {
+  income: 'Приход',
+  expense: 'Расход',
+  collection: 'Инкассация',
+  other: 'Прочее',
+};
+
+const TYPE_COLOR: Record<TransactionType, string> = {
+  income: 'text-green-600',
+  expense: 'text-red-600',
+  collection: 'text-muted-foreground',
+  other: 'text-muted-foreground',
+};
+
+const TYPE_SIGN: Record<TransactionType, string> = {
+  income: '+',
+  expense: '−',
+  collection: '',
+  other: '',
+};
+
+function formatCurrency(amount: number) {
+  return amount.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' с';
+}
+
+function nowLocalISO() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatDateLabel(isoDate: string) {
+  const d = new Date(isoDate);
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+
+function toDateKey(iso: string) {
+  return iso.slice(0, 10);
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Grid: date | shift | type | method | amount | comment | delete */
+const TX_GRID_TEMPLATE = '160px 140px 140px 140px 130px minmax(160px,1fr) 32px';
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+interface ModalProps {
+  shifts: CashShift[];
+  onClose: () => void;
+}
+
+function AddTransactionModal({ shifts, onClose }: ModalProps) {
+  const [type, setType] = useState<CreatableTransactionType>('expense');
+  const [amount, setAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [datetime, setDatetime] = useState(nowLocalISO());
+  const [note, setNote] = useState('');
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [linkToShift, setLinkToShift] = useState(true);
+
+  const addTx = useAddTransaction();
+  const catType = type === 'collection' ? undefined : type;
+  const { data: categories = [] } = useTransactionCategories(catType);
+
+  async function handleSave() {
+    const amt = parseFloat(amount);
+    if (!amount || isNaN(amt) || amt <= 0) { setError('Введите корректную сумму'); return; }
+    try {
+      const atIso = new Date(datetime).toISOString();
+      const shiftId =
+        linkToShift ? matchShiftIdForTimestamp(atIso, shifts) : null;
+      await addTx.mutateAsync({
+        type,
+        payment_method: paymentMethod,
+        amount: amt,
+        note: note.trim(),
+        transaction_at: atIso,
+        shift_id: shiftId,
+        category_id: type === 'collection' ? null : categoryId,
+      });
+      toast.success('Транзакция добавлена');
+      onClose();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось сохранить');
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-2xl shadow-xl w-[420px] p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-bold">Новая транзакция</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Type */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-muted-foreground mb-2 block">Тип</label>
+          <div
+            className="inline-flex rounded-lg p-0.5"
+            style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+          >
+            {(['expense', 'income', 'collection'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+                  type === t
+                    ? 'bg-white text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                style={type === t ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}
+              >
+                {TYPE_LABELS[t]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Amount */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-muted-foreground mb-2 block">Сумма</label>
+          <div className="relative">
+            <input
+              type="number"
+              className="w-full px-3 py-2 border rounded-lg text-sm bg-background pr-10 outline-none focus:border-primary transition-colors"
+              placeholder="0"
+              value={amount}
+              onChange={(e) => { setAmount(e.target.value); setError(''); }}
+              autoFocus
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">сом</span>
+          </div>
+          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        </div>
+
+        {/* Payment method */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-muted-foreground mb-2 block">Способ оплаты</label>
+          <div
+            className="inline-flex rounded-lg p-0.5"
+            style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+          >
+            {(['cash', 'card'] as PaymentMethod[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setPaymentMethod(m)}
+                className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+                  paymentMethod === m
+                    ? 'bg-white text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                style={paymentMethod === m ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}
+              >
+                {m === 'cash' ? 'Наличные' : 'Безналичные'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Category (income/expense only) */}
+        {type !== 'collection' && categories.length > 0 && (
+          <div className="mb-4">
+            <label className="text-xs font-semibold text-muted-foreground mb-2 block">Категория</label>
+            <select
+              className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
+              value={categoryId ?? ''}
+              onChange={(e) => setCategoryId(e.target.value || null)}
+            >
+              <option value="">Без категории</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Datetime */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-muted-foreground mb-2 block">Дата и время</label>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              className="flex-1 px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
+              value={datetime.slice(0, 10)}
+              onChange={(e) => setDatetime(e.target.value + 'T' + (datetime.slice(11) || '00:00'))}
+            />
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={0} max={23}
+                className="w-14 px-2 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors text-center"
+                value={datetime.slice(11, 13)}
+                onChange={(e) => {
+                  const h = String(Math.min(23, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, '0');
+                  setDatetime(datetime.slice(0, 11) + h + ':' + datetime.slice(14, 16));
+                }}
+              />
+              <span className="text-muted-foreground font-medium">:</span>
+              <input
+                type="number"
+                min={0} max={59}
+                className="w-14 px-2 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors text-center"
+                value={datetime.slice(14, 16)}
+                onChange={(e) => {
+                  const m = String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))).padStart(2, '0');
+                  setDatetime(datetime.slice(0, 11) + datetime.slice(11, 13) + ':' + m);
+                }}
+              />
+            </div>
+          </div>
+          {(() => {
+            const sid = matchShiftIdForTimestamp(new Date(datetime).toISOString(), shifts);
+            const s = shifts.find((x) => x.id === sid);
+            if (!linkToShift) {
+              return <p className="text-xs text-muted-foreground mt-1">Без привязки к смене</p>;
+            }
+            return sid ? (
+              <p className="text-xs text-green-700 mt-1 font-medium">→ Смена: {s?.openTime ?? sid}</p>
+            ) : (
+              <p className="text-xs text-amber-600 mt-1">Не попадает ни в одну смену (смена не будет указана)</p>
+            );
+          })()}
+        </div>
+
+        <div className="mb-4">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={linkToShift}
+              onChange={(e) => setLinkToShift(e.target.checked)}
+              className="rounded border-muted-foreground"
+            />
+            <span className="text-muted-foreground">Привязать к смене по дате и времени</span>
+          </label>
+        </div>
+
+        {/* Note */}
+        <div className="mb-6">
+          <label className="text-xs font-semibold text-muted-foreground mb-2 block">Комментарий</label>
+          <input
+            type="text"
+            className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
+            placeholder="Например: оплата поставщику"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleSave}
+            disabled={addTx.isPending}
+            className="flex-1 py-2.5 bg-foreground text-background rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {addTx.isPending ? 'Сохранение...' : 'Сохранить'}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 border-2 rounded-xl font-bold text-sm hover:bg-secondary transition-colors"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export function Transactions() {
+  const [showModal, setShowModal] = useState(false);
+  const { data: txs = [], isLoading, isError, error } = useTransactions();
+  const { data: shifts = [] } = useShifts();
+  const { data: allCats = [] } = useTransactionCategories();
+  const catMap = Object.fromEntries(allCats.map((c) => [c.id, c.name]));
+  const deleteTx = useDeleteTransaction();
+
+  const shiftById = useMemo(
+    () => new Map(shifts.map((s) => [s.id.toLowerCase(), s])),
+    [shifts],
+  );
+
+  // Group by date key (YYYY-MM-DD), preserving order (already sorted desc by transaction_at)
+  const groups: { dateKey: string; dateLabel: string; items: typeof txs }[] = [];
+  for (const tx of txs) {
+    const dk = toDateKey(tx.transaction_at);
+    const last = groups[groups.length - 1];
+    if (last && last.dateKey === dk) {
+      last.items.push(tx);
+    } else {
+      groups.push({ dateKey: dk, dateLabel: formatDateLabel(tx.transaction_at), items: [tx] });
+    }
+  }
+
+  return (
+    <div className="p-8">
+      {showModal && <AddTransactionModal shifts={shifts} onClose={() => setShowModal(false)} />}
+
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">Транзакции</h2>
+        <button
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Добавить
+        </button>
+      </div>
+
+      {isError && (
+        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error instanceof Error ? error.message : 'Не удалось загрузить транзакции'}
+        </div>
+      )}
+
+      {isLoading && <p className="text-sm text-muted-foreground">Загрузка...</p>}
+      {!isLoading && !isError && txs.length === 0 && (
+        <div className="text-sm text-muted-foreground py-8 text-center space-y-2 max-w-lg mx-auto">
+          <p>Нет транзакций для заведения с id:</p>
+          <p className="font-mono text-xs break-all text-foreground">{VENUE_ID}</p>
+          <p className="text-xs leading-relaxed">
+            Если POS пишет в другой <code className="text-foreground">venue_id</code>, выставьте{' '}
+            <code className="text-foreground">VITE_VENUE_ID</code> как у POS. Если в SQL строки есть, а здесь пусто —
+            проверьте RLS на <code className="text-foreground">cash_transactions</code> (SELECT для anon/authenticated).
+          </p>
+        </div>
+      )}
+
+      {groups.length > 0 && (
+        <div
+          className="-mx-3 w-fit"
+          style={{ display: 'grid', gridTemplateColumns: TX_GRID_TEMPLATE }}
+        >
+          <div className="col-span-7 grid grid-cols-subgrid items-center pt-4 pb-2 px-3 text-sm font-semibold text-muted-foreground sticky top-0 z-10 bg-white">
+            <div className="pr-6">Дата</div>
+            <div className="pr-6">Смена</div>
+            <div className="pr-6">Тип</div>
+            <div className="pr-6">Способ</div>
+            <div className="pr-6 text-right">Сумма</div>
+            <div className="min-w-0 pr-6">Комментарий</div>
+            <div />
+          </div>
+
+          <div className="col-span-7 grid grid-cols-subgrid">
+            {groups.flatMap(({ dateLabel, items }) =>
+              items.map((tx, idx) => {
+                const shift = tx.shift_id ? shiftById.get(tx.shift_id.toLowerCase()) : undefined;
+                return (
+                <div
+                  key={tx.id}
+                  className="col-span-7 grid grid-cols-subgrid group hover:bg-[#EFF0F4] transition-colors even:bg-muted/10"
+                >
+                  <div className="grid grid-cols-subgrid col-span-7 items-center py-2 px-3">
+                    <div className="pr-6 min-h-[1.25rem]">
+                      {idx === 0 ? (
+                        <span className="text-sm font-semibold text-foreground">{dateLabel}</span>
+                      ) : null}
+                    </div>
+                    <div className="pr-6 min-w-0 text-sm">
+                      {tx.shift_id ? (
+                        shift ? (
+                        <Link
+                          to={`/cash-shifts?shift=${tx.shift_id}`}
+                          className="text-[#5D4FF1] hover:text-[#F70000] font-medium truncate block"
+                          title={`${shift.openTime} — ${shift.closeTime ?? '…'}`}
+                        >
+                          {shift.openTime}
+                        </Link>
+                        ) : (
+                          <Link
+                            to={`/cash-shifts?shift=${tx.shift_id}`}
+                            className="text-[#5D4FF1] hover:text-[#F70000] text-xs truncate block"
+                            title="Смена"
+                          >
+                            Открыть смену
+                          </Link>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </div>
+                    <div className="pr-6">
+                      <span className={`text-sm font-semibold ${TYPE_COLOR[tx.type]}`}>
+                        {TYPE_LABELS[tx.type]}
+                      </span>
+                      {tx.category_id && catMap[tx.category_id] && (
+                        <span className="block text-xs text-muted-foreground truncate">{catMap[tx.category_id]}</span>
+                      )}
+                    </div>
+                    <div className="pr-6 text-sm text-muted-foreground">
+                      {tx.payment_method === 'cash' ? 'Наличные' : 'Безналичные'}
+                    </div>
+                    <div
+                      className={`pr-6 text-sm text-right tabular-nums font-medium ${TYPE_COLOR[tx.type]}`}
+                    >
+                      {TYPE_SIGN[tx.type]}
+                      {formatCurrency(tx.amount)}
+                    </div>
+                    <div className="min-w-0 pr-6 text-sm text-muted-foreground truncate">
+                      {tx.note || '—'}
+                    </div>
+                    <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => deleteTx.mutate(tx.id)}
+                        className="text-red-400 hover:text-red-600 transition-colors p-1"
+                        title="Удалить"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

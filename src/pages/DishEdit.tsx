@@ -3,10 +3,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import crossIcon from '@/assets/icons/cross.svg';
 import { supabase, VENUE_ID } from '@/lib/supabase';
+import { parseDecimalField, sanitizeDecimalString } from '@/lib/decimalMask';
+import {
+  canonicalUnitFromIngredient,
+  ingredientCostForRecipeItem,
+  normalizeQuantityToCanonical,
+} from '@/lib/units';
 import { useCategories, useWorkshops } from '@/hooks/useMenuData';
 import {
   useDish, useDishRecipe, useDishModifiers,
-  useAllModifierGroups, useIngredients, useInvalidateDish,
+  useDishModifierIngredients, useIngredients, useInvalidateDish,
 } from '@/hooks/useDishData';
 import { useWiggle } from '@/hooks/useWiggle';
 import type { RecipeItem, ModifierGroup } from '@/hooks/useDishData';
@@ -28,14 +34,22 @@ function InputWithSuffix({ suffix, defaultValue, onSave, className = '' }: {
   onSave: (val: number) => void;
   className?: string;
 }) {
+  const [value, setValue] = useState(String(defaultValue ?? ''));
+
+  useEffect(() => {
+    setValue(String(defaultValue ?? ''));
+  }, [defaultValue]);
+
   return (
     <div className={`${className} relative`}>
       <input
         className="w-full pl-2 pr-8 py-0.5 border rounded text-sm bg-background text-right"
-        defaultValue={defaultValue}
+        value={value}
         inputMode="decimal"
+        onChange={(e) => setValue(sanitizeDecimalString(e.target.value))}
         onBlur={(e) => {
-          const val = parseFloat(e.target.value) || 0;
+          const val = parseDecimalField(e.target.value);
+          setValue(String(val || ''));
           onSave(val);
         }}
         onKeyDown={(e) => {
@@ -108,15 +122,76 @@ function CategoryDropdown({ categories, value, onChange }: {
   );
 }
 
+function IngredientPicker({
+  ingredients,
+  valueId,
+  onSelect,
+  placeholder = 'Поиск ингредиента...',
+  disabled = false,
+  autoFocus = false,
+}: {
+  ingredients: Array<{ id: string; name: string }>;
+  valueId: string | null;
+  onSelect: (id: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    const selected = ingredients.find((i) => i.id === valueId);
+    setQuery(selected?.name || '');
+  }, [valueId, ingredients]);
+
+  const filtered = query.trim()
+    ? ingredients.filter((i) => i.name.toLowerCase().includes(query.toLowerCase()))
+    : ingredients;
+
+  return (
+    <div className="w-40 relative">
+      <input
+        className="w-full px-2 py-1 border rounded text-sm bg-background"
+        placeholder={placeholder}
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        autoFocus={autoFocus}
+        disabled={disabled}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute top-full left-0 right-0 bg-white border rounded-lg mt-1 shadow-lg z-10 max-h-48 overflow-auto">
+          {filtered.slice(0, 7).map((ing) => (
+            <button
+              key={ing.id}
+              className="w-full text-left px-3 py-2 text-sm hover:bg-[#EFF0F4] transition-colors"
+              onClick={() => {
+                setQuery(ing.name);
+                setOpen(false);
+                onSelect(ing.id);
+              }}
+            >
+              {ing.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DishEdit() {
   const { id } = useParams<{ id: string }>();
+  const isCreateMode = !id || id === 'new';
+  const currentDishId = isCreateMode ? null : id;
   const navigate = useNavigate();
-  const { data: dish, isLoading } = useDish(id);
-  const { data: recipe = [] } = useDishRecipe(id);
-  const { data: dishModGroups = [] } = useDishModifiers(id);
+  const { data: dish, isLoading } = useDish(currentDishId || undefined);
+  const { data: recipe = [] } = useDishRecipe(currentDishId || undefined);
+  const { data: dishModGroups = [] } = useDishModifiers(currentDishId || undefined);
   const { data: categories = [] } = useCategories();
   const { data: workshops = [] } = useWorkshops();
-  const { data: allModGroups = [] } = useAllModifierGroups();
   const { data: ingredients = [] } = useIngredients();
   const { invalidate, removeRecipeItem, addRecipeItem, removeModifier, addModifier, addModGroup, removeModGroup } = useInvalidateDish();
   const qc = useQueryClient();
@@ -126,20 +201,14 @@ export function DishEdit() {
   const [price, setPrice] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [workshopId, setWorkshopId] = useState('');
-  const [outputWeight, setOutputWeight] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const { data: modifierIngredients = [] } = useDishModifierIngredients(currentDishId || undefined, workshopId || dish?.workshop_id || null);
 
   // Ingredient add
   const [showAddIngredient, setShowAddIngredient] = useState(false);
   const [ingredientSearch, setIngredientSearch] = useState('');
   const [newIngQty, setNewIngQty] = useState('');
-  const [newIngUnit, setNewIngUnit] = useState('г');
   const [selectedIngId, setSelectedIngId] = useState('');
-  const [showIngDropdown, setShowIngDropdown] = useState(false);
-
-  // Recipe edit
-  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
-  const [editRecipeQty, setEditRecipeQty] = useState('');
 
   // Wiggle refs
   const [nameRef, wiggleName] = useWiggle<HTMLInputElement>();
@@ -157,10 +226,10 @@ export function DishEdit() {
   const [addingModToGroup, setAddingModToGroup] = useState<string | null>(null);
   const [modIngSearch, setModIngSearch] = useState('');
   const [modIngId, setModIngId] = useState('');
-  const [modIngName, setModIngName] = useState('');
   const [newModPrice, setNewModPrice] = useState('');
   const [newModQty, setNewModQty] = useState('');
-  const [showModIngDropdown, setShowModIngDropdown] = useState(false);
+
+  const availableModifierIngredientIds = new Set(modifierIngredients.map((i) => i.id));
 
   // Init form from dish data
   useEffect(() => {
@@ -169,105 +238,146 @@ export function DishEdit() {
       setPrice(String(dish.price));
       setCategoryId(dish.category_id || '');
       setWorkshopId(dish.workshop_id || '');
-      setOutputWeight(dish.output_weight || '');
       setIsActive(dish.is_active);
+      return;
     }
-  }, [dish]);
+    if (isCreateMode) {
+      setName('');
+      setPrice('');
+      setCategoryId('');
+      setWorkshopId('');
+      setIsActive(true);
+    }
+  }, [dish, isCreateMode]);
 
-  if (isLoading) return <div className="p-8 text-muted-foreground">Загрузка...</div>;
-  if (!dish) return <div className="p-8 text-muted-foreground">Блюдо не найдено</div>;
+  if (!isCreateMode && isLoading) return <div className="p-8 text-muted-foreground">Загрузка...</div>;
+  if (!isCreateMode && !dish) return <div className="p-8 text-muted-foreground">Блюдо не найдено</div>;
 
   // Calculations
-  const costPrice = recipe.reduce((sum, r) => sum + r.ingredient_price * r.quantity / 1000, 0);
+  const costPrice = recipe.reduce(
+    (sum, r) =>
+      sum +
+      ingredientCostForRecipeItem({
+        ingredientPrice: r.ingredient_price,
+        ingredientUnit: r.ingredient_unit,
+        recipeQuantity: r.quantity,
+        recipeUnit: r.unit,
+      }),
+    0
+  );
   const outputWeightCalc = recipe.reduce((sum, r) => sum + r.quantity, 0);
-  const priceNum = parseFloat(price) || 0;
+  const priceNum = parseDecimalField(price);
   const markup = costPrice > 0 ? Math.round((priceNum - costPrice) / costPrice * 100) : 0;
 
   // Available modifier groups (not yet linked)
   // Hardcoded preset templates
-  const PRESETS = [
-    { name: 'Молоко', max_select: 1, modifiers: [
-      { name: 'Обычное', price: 0 },
-      { name: 'Овсяное', price: 30 },
-      { name: 'Кокосовое', price: 40 },
-      { name: 'Безлактозное', price: 30 },
-    ]},
-    { name: 'Сироп', max_select: 0, modifiers: [
-      { name: 'Ваниль', price: 20 },
-      { name: 'Карамель', price: 20 },
-      { name: 'Лаванда', price: 25 },
-      { name: 'Кокос', price: 20 },
-    ]},
-    { name: 'Доп. опции', max_select: 0, modifiers: [
-      { name: 'Доп. шот', price: 40 },
-      { name: 'Взбитые сливки', price: 30 },
-    ]},
-    { name: 'Соус', max_select: 1, modifiers: [
-      { name: 'Кетчуп', price: 0 },
-      { name: 'Горчица', price: 0 },
-      { name: 'BBQ', price: 20 },
-    ]},
-    { name: 'Прожарка', max_select: 1, modifiers: [
-      { name: 'Rare', price: 0 },
-      { name: 'Medium', price: 0 },
-      { name: 'Well done', price: 0 },
-    ]},
-  ];
-
-  // Filter out presets already added to this dish
-  const existingGroupNames = dishModGroups.map(g => g.name.toLowerCase());
-  const availablePresets = PRESETS.filter(p => !existingGroupNames.includes(p.name.toLowerCase()));
-
-  // Filtered ingredients for recipe search
   const filteredIngredients = ingredientSearch.trim()
-    ? ingredients.filter(i => i.name.toLowerCase().includes(ingredientSearch.toLowerCase()))
+    ? ingredients.filter((i) => i.name.toLowerCase().includes(ingredientSearch.toLowerCase()))
     : ingredients;
+  const selectedIngredient = ingredients.find((i) => i.id === selectedIngId);
+  const selectedIngredientUnit = selectedIngredient ? canonicalUnitFromIngredient(selectedIngredient.unit) : 'г';
 
   // Filtered ingredients for modifier search
   const filteredModIngredients = modIngSearch.trim()
-    ? ingredients.filter(i => i.name.toLowerCase().includes(modIngSearch.toLowerCase()))
-    : ingredients;
+    ? modifierIngredients.filter(i => i.name.toLowerCase().includes(modIngSearch.toLowerCase()))
+    : modifierIngredients;
+  const selectedModIngredient = modifierIngredients.find((i) => i.id === modIngId);
+  const selectedModUnit = selectedModIngredient ? canonicalUnitFromIngredient(selectedModIngredient.unit) : 'мл';
 
   async function handleSave() {
     if (!name.trim()) { wiggleName(); return; }
+
+    if (isCreateMode) {
+      const { data: sortRow } = await supabase
+        .from('products')
+        .select('sort_order')
+        .eq('venue_id', VENUE_ID)
+        .eq('type', 'dish')
+        .order('sort_order', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const nextSort = (Number((sortRow as { sort_order?: number } | null)?.sort_order) || 0) + 1;
+
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          venue_id: VENUE_ID,
+          type: 'dish',
+          name: name.trim(),
+          price: parseDecimalField(price),
+          cost_price: 0,
+          category_id: categoryId || null,
+          workshop_id: workshopId || null,
+          output_weight: null,
+          is_active: true,
+          has_modifiers: false,
+          sort_order: nextSort,
+        })
+        .select('id')
+        .single();
+      if (error || !data?.id) {
+        alert('Ошибка: ' + (error?.message || 'Не удалось создать блюдо'));
+        return;
+      }
+      navigate(`/menu/dish/${data.id}`);
+      return;
+    }
+
+    if (!currentDishId) return;
     const { error } = await supabase.from('products').update({
       name: name.trim(),
-      price: parseFloat(price) || 0,
+      price: parseDecimalField(price),
       cost_price: Math.round(costPrice * 100) / 100,
       category_id: categoryId || null,
       workshop_id: workshopId || null,
       output_weight: outputWeightCalc > 0 ? String(outputWeightCalc) : null,
       is_active: isActive,
-    }).eq('id', id);
+    }).eq('id', currentDishId);
 
     if (error) { alert('Ошибка: ' + error.message); return; }
-    invalidate(id!);
+    invalidate(currentDishId);
     navigate('/menu');
   }
 
   async function handleDelete() {
+    if (!currentDishId) return;
     if (!confirm('Удалить блюдо? Это действие нельзя отменить.')) return;
-    await supabase.from('recipe_items').delete().eq('product_id', id);
-    await supabase.from('product_modifier_groups').delete().eq('product_id', id);
-    await supabase.from('products').delete().eq('id', id);
-    invalidate(id!);
+    const { error: recErr } = await supabase.from('recipe_items').delete().eq('product_id', currentDishId);
+    if (recErr) {
+      alert(`Не удалось удалить состав: ${recErr.message}`);
+      return;
+    }
+    const { error: linkErr } = await supabase.from('product_modifier_groups').delete().eq('product_id', currentDishId);
+    if (linkErr) {
+      alert(`Не удалось удалить связи модификаторов: ${linkErr.message}`);
+      return;
+    }
+    const { error: dishErr } = await supabase.from('products').delete().eq('id', currentDishId);
+    if (dishErr) {
+      alert(`Не удалось удалить блюдо: ${dishErr.message}`);
+      return;
+    }
+    invalidate(currentDishId);
     navigate('/menu');
   }
 
   async function handleAddIngredient() {
+    if (!currentDishId) return;
     if (!selectedIngId) { wiggleIngSearch(); return; }
     if (!newIngQty) { wiggleIngQty(); return; }
-    const qty = parseFloat(newIngQty) || 0;
+    const qty = parseDecimalField(newIngQty);
     const ing = ingredients.find(i => i.id === selectedIngId);
+    const normalized = normalizeQuantityToCanonical(qty, selectedIngredientUnit);
     const tempId = crypto.randomUUID();
 
-    addRecipeItem(id!, {
+    addRecipeItem(currentDishId, {
       id: tempId,
       ingredient_id: selectedIngId,
       ingredient_name: ing?.name || '',
       ingredient_price: ing?.price || 0,
-      quantity: qty,
-      unit: newIngUnit,
+      ingredient_unit: ing?.unit || null,
+      quantity: normalized.quantity,
+      unit: normalized.unit,
     });
 
     setShowAddIngredient(false);
@@ -275,153 +385,191 @@ export function DishEdit() {
     setNewIngQty('');
     setSelectedIngId('');
 
-    supabase.from('recipe_items').insert({
-      product_id: id,
+    const { error } = await supabase.from('recipe_items').insert({
+      product_id: currentDishId,
       ingredient_id: selectedIngId,
-      quantity: qty,
-      unit: newIngUnit,
+      quantity: normalized.quantity,
+      unit: normalized.unit,
     });
+    if (error) {
+      alert(`Не удалось добавить ингредиент: ${error.message}`);
+    }
+    invalidate(currentDishId);
   }
 
   async function handleRemoveIngredient(recipeItemId: string) {
-    removeRecipeItem(id!, recipeItemId);
-    supabase.from('recipe_items').delete().eq('id', recipeItemId);
+    if (!currentDishId) return;
+    removeRecipeItem(currentDishId, recipeItemId);
+    const { error } = await supabase.from('recipe_items').delete().eq('id', recipeItemId);
+    if (error) {
+      alert(`Не удалось удалить ингредиент: ${error.message}`);
+    }
+    invalidate(currentDishId);
   }
 
-  async function handleUpdateRecipeQty(recipeItemId: string) {
-    const qty = parseFloat(editRecipeQty);
-    if (!qty || qty <= 0) return;
-    await supabase.from('recipe_items').update({ quantity: qty }).eq('id', recipeItemId);
-    setEditingRecipeId(null);
-    setEditRecipeQty('');
-    invalidate(id!);
-  }
-
-  async function handleAddPreset(preset: typeof PRESETS[0]) {
-    const tempGroupId = crypto.randomUUID();
-
-    // Optimistic: show immediately
-    addModGroup(id!, {
-      id: tempGroupId,
-      name: preset.name,
-      is_required: false,
-      max_select: preset.max_select,
-      modifiers: preset.modifiers.map(m => ({
-        id: crypto.randomUUID(),
-        name: m.name,
-        price: m.price,
-        ingredient_id: null,
-        quantity: null,
-        unit: null,
-      })),
-    });
-    setShowAddModGroup(false);
-
-    // Create group in DB
-    supabase.from('modifier_groups').insert({
-      venue_id: VENUE_ID,
-      name: preset.name,
-      is_required: false,
-      max_select: preset.max_select,
-    }).select('id').single().then(({ data: group }) => {
-      if (!group) return;
-      // Link to dish
-      supabase.from('product_modifier_groups').insert({
-        product_id: id,
-        modifier_group_id: group.id,
-      });
-      supabase.from('products').update({ has_modifiers: true }).eq('id', id);
-      // Create modifiers
-      supabase.from('modifiers').insert(
-        preset.modifiers.map((m, i) => ({
-          modifier_group_id: group.id,
-          name: m.name,
-          price: m.price,
-          sort_order: i + 1,
-        }))
-      );
-    });
+  async function handleUpdateRecipeIngredient(recipeItemId: string, ingredientId: string) {
+    if (!currentDishId) return;
+    const ing = ingredients.find((i) => i.id === ingredientId);
+    if (!ing) return;
+    const { error } = await supabase
+      .from('recipe_items')
+      .update({ ingredient_id: ingredientId, unit: canonicalUnitFromIngredient(ing.unit) })
+      .eq('id', recipeItemId);
+    if (error) {
+      alert(`Не удалось обновить ингредиент: ${error.message}`);
+      return;
+    }
+    invalidate(currentDishId);
   }
 
   async function handleCreateModGroup() {
+    if (!currentDishId) return;
     if (!newGroupName.trim()) { wiggleGroupName(); return; }
-    const tempId = crypto.randomUUID();
     const name = newGroupName.trim();
     const maxSelect = newGroupType === 'single' ? 1 : 0;
-
-    // Optimistic
-    addModGroup(id!, { id: tempId, name, is_required: false, max_select: maxSelect, modifiers: [] });
 
     setShowAddModGroup(false);
     setNewGroupName('');
     setNewGroupType('single');
-    setAddingModToGroup(tempId);
-
-    // Server: create group, link to product, then refetch for real IDs
-    supabase.from('modifier_groups').insert({
+    const { data: group, error: groupErr } = await supabase.from('modifier_groups').insert({
       venue_id: VENUE_ID,
       name,
       is_required: false,
       max_select: maxSelect,
-    }).select('id').single().then(({ data: group }) => {
-      if (!group) return;
-      supabase.from('product_modifier_groups').insert({
-        product_id: id,
-        modifier_group_id: group.id,
-      });
-      supabase.from('products').update({ has_modifiers: true }).eq('id', id);
+    }).select('id').single();
+    if (groupErr || !group?.id) {
+      alert('Не удалось создать набор модификаторов');
+      return;
+    }
+    const { error: linkErr } = await supabase.from('product_modifier_groups').insert({
+      product_id: currentDishId,
+      modifier_group_id: group.id,
     });
+    if (linkErr) {
+      alert(`Не удалось привязать группу: ${linkErr.message}`);
+      invalidate(currentDishId);
+      return;
+    }
+    const { error: productErr } = await supabase.from('products').update({ has_modifiers: true }).eq('id', currentDishId);
+    if (productErr) {
+      alert(`Не удалось обновить блюдо: ${productErr.message}`);
+      invalidate(currentDishId);
+      return;
+    }
+    invalidate(currentDishId);
+    setAddingModToGroup(group.id);
   }
 
   async function handleRemoveModGroup(groupId: string) {
-    removeModGroup(id!, groupId);
-    supabase.from('product_modifier_groups')
+    if (!currentDishId) return;
+    removeModGroup(currentDishId, groupId);
+    const { error } = await supabase.from('product_modifier_groups')
       .delete()
-      .eq('product_id', id)
-      .eq('modifier_group_id', groupId)
-      .then(() => {
-        const remaining = dishModGroups.filter(g => g.id !== groupId);
-        if (remaining.length === 0) {
-          supabase.from('products').update({ has_modifiers: false }).eq('id', id);
-        }
-      });
+      .eq('product_id', currentDishId)
+      .eq('modifier_group_id', groupId);
+    if (error) {
+      alert(`Не удалось удалить группу: ${error.message}`);
+      invalidate(currentDishId);
+      return;
+    }
+    const remaining = dishModGroups.filter(g => g.id !== groupId);
+    if (remaining.length === 0) {
+      await supabase.from('products').update({ has_modifiers: false }).eq('id', currentDishId);
+    }
+    invalidate(currentDishId);
   }
 
-  async function handleAddModifier(groupId: string) {
-    if (!modIngId) { wiggleModName(); return; }
+  async function handleAddModifier(groupId: string, ingredientIdOverride?: string) {
+    if (!currentDishId) return;
+    if (!workshopId) { wiggleModName(); return; }
+    const nextIngId = ingredientIdOverride || modIngId;
+    if (!nextIngId) { wiggleModName(); return; }
+    if (!availableModifierIngredientIds.has(nextIngId)) {
+      alert('Выбранный ингредиент недоступен на складах цеха блюда');
+      return;
+    }
+    const selectedIngredient = modifierIngredients.find((i) => i.id === nextIngId);
+    if (!selectedIngredient) {
+      alert('Ингредиент не найден');
+      return;
+    }
     const maxSort = dishModGroups.find(g => g.id === groupId)?.modifiers.length || 0;
-    const price = parseFloat(newModPrice) || 0;
-    const qty = parseFloat(newModQty) || 0;
+    const price = parseDecimalField(newModPrice);
+    const qty = parseDecimalField(newModQty);
+    const derivedName = selectedIngredient.name;
+    const canonicalUnit = canonicalUnitFromIngredient(selectedIngredient.unit);
 
-    addModifier(id!, groupId, {
+    addModifier(currentDishId, groupId, {
       id: crypto.randomUUID(),
-      name: modIngName,
+      name: derivedName,
       price,
-      ingredient_id: modIngId,
+      ingredient_id: nextIngId,
       quantity: qty || null,
-      unit: 'мл',
+      unit: canonicalUnit,
     });
 
     setModIngSearch('');
     setModIngId('');
-    setModIngName('');
     setNewModPrice('');
     setNewModQty('');
 
-    supabase.from('modifiers').insert({
+    const { error } = await supabase.from('modifiers').insert({
       modifier_group_id: groupId,
-      name: modIngName,
+      name: derivedName,
       price,
-      ingredient_id: modIngId,
+      ingredient_id: nextIngId,
       quantity: qty || null,
-      unit: 'мл',
+      unit: canonicalUnit,
       sort_order: maxSort + 1,
     });
+    if (error) {
+      alert(`Не удалось сохранить модификатор: ${error.message}`);
+      invalidate(currentDishId);
+      return;
+    }
+    invalidate(currentDishId);
+  }
+
+  async function handleUpdateModifierIngredient(modId: string, ingredientId: string) {
+    if (!currentDishId) return;
+    const next = ingredientId || null;
+    if (next && !availableModifierIngredientIds.has(next)) {
+      alert('Ингредиент недоступен на складах цеха блюда');
+      return;
+    }
+    const ingredientName = next
+      ? modifierIngredients.find((i) => i.id === next)?.name || null
+      : null;
+
+    qc.setQueryData(['dish-modifiers', currentDishId], (old: any) =>
+      old?.map((g: any) => ({
+        ...g,
+        modifiers: g.modifiers.map((m: any) => (
+          m.id === modId
+            ? { ...m, ingredient_id: next, name: ingredientName || m.name }
+            : m
+        )),
+      }))
+    );
+    const patch: { ingredient_id: string | null; name?: string } = { ingredient_id: next };
+    if (ingredientName) patch.name = ingredientName;
+    const { error } = await supabase.from('modifiers').update(patch).eq('id', modId);
+    if (error) {
+      alert(`Не удалось обновить ингредиент модификатора: ${error.message}`);
+      invalidate(currentDishId);
+      return;
+    }
+    invalidate(currentDishId);
   }
 
   async function handleRemoveModifier(modId: string) {
-    removeModifier(id!, modId);
-    supabase.from('modifiers').delete().eq('id', modId);
+    if (!currentDishId) return;
+    removeModifier(currentDishId, modId);
+    const { error } = await supabase.from('modifiers').delete().eq('id', modId);
+    if (error) {
+      alert(`Не удалось удалить модификатор: ${error.message}`);
+    }
+    invalidate(currentDishId);
   }
 
   const renderModSwitcher = (group: any) => (
@@ -430,9 +578,14 @@ export function DishEdit() {
       style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.08)' }}
     >
       <button
-        onClick={() => {
-          qc.setQueryData(['dish-modifiers', id], (old: any) => old?.map((g: any) => g.id === group.id ? { ...g, max_select: 1 } : g));
-          supabase.from('modifier_groups').update({ max_select: 1 }).eq('id', group.id);
+        onClick={async () => {
+          if (!currentDishId) return;
+          qc.setQueryData(['dish-modifiers', currentDishId], (old: any) => old?.map((g: any) => g.id === group.id ? { ...g, max_select: 1 } : g));
+          const { error } = await supabase.from('modifier_groups').update({ max_select: 1 }).eq('id', group.id);
+          if (error) {
+            alert(`Не удалось обновить режим: ${error.message}`);
+          }
+          invalidate(currentDishId);
         }}
         className={`px-2 py-0.5 rounded text-sm transition-all ${
           group.max_select === 1 ? 'bg-white text-foreground' : 'text-muted-foreground'
@@ -442,9 +595,14 @@ export function DishEdit() {
         один
       </button>
       <button
-        onClick={() => {
-          qc.setQueryData(['dish-modifiers', id], (old: any) => old?.map((g: any) => g.id === group.id ? { ...g, max_select: 0 } : g));
-          supabase.from('modifier_groups').update({ max_select: 0 }).eq('id', group.id);
+        onClick={async () => {
+          if (!currentDishId) return;
+          qc.setQueryData(['dish-modifiers', currentDishId], (old: any) => old?.map((g: any) => g.id === group.id ? { ...g, max_select: 0 } : g));
+          const { error } = await supabase.from('modifier_groups').update({ max_select: 0 }).eq('id', group.id);
+          if (error) {
+            alert(`Не удалось обновить режим: ${error.message}`);
+          }
+          invalidate(currentDishId);
         }}
         className={`px-2 py-0.5 rounded text-sm transition-all ${
           group.max_select !== 1 ? 'bg-white text-foreground' : 'text-muted-foreground'
@@ -535,7 +693,7 @@ export function DishEdit() {
               className="w-full pl-3 pr-10 py-2 border rounded-lg text-sm bg-background text-right"
               inputMode="decimal"
               value={price}
-              onChange={(e) => setPrice(e.target.value.replace(/[^0-9.,]/g, ''))}
+              onChange={(e) => setPrice(sanitizeDecimalString(e.target.value))}
             />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">сом</span>
           </div>
@@ -555,25 +713,45 @@ export function DishEdit() {
       {/* Recipe / Состав */}
       <div className="mb-10">
         <h3 className="text-lg font-semibold mb-4">Состав</h3>
-
-        {recipe.length > 0 && (
+        {!currentDishId ? (
+          <p className="text-xs text-muted-foreground">
+            Сначала сохраните карточку блюда, после этого можно редактировать состав.
+          </p>
+        ) : (
           <div>
-
             {recipe.map((item) => (
               <div key={item.id} className="group flex items-center py-1.5 gap-4">
-                <div className="w-40 text-sm truncate">{item.ingredient_name}</div>
+                <IngredientPicker
+                  ingredients={ingredients}
+                  valueId={item.ingredient_id}
+                  onSelect={(ingredientId) => handleUpdateRecipeIngredient(item.id, ingredientId)}
+                />
                 <InputWithSuffix
-                  suffix="г"
+                  suffix={item.unit || 'г'}
                   className="w-20"
                   defaultValue={item.quantity}
-                  onSave={(qty) => {
-                    if (qty && qty !== item.quantity) {
-                      supabase.from('recipe_items').update({ quantity: qty }).eq('id', item.id);
+                  onSave={async (qty) => {
+                    if (!qty || qty === item.quantity) return;
+                    const normalized = normalizeQuantityToCanonical(qty, item.unit || 'г');
+                    const { error } = await supabase
+                      .from('recipe_items')
+                      .update({ quantity: normalized.quantity, unit: normalized.unit })
+                      .eq('id', item.id);
+                    if (error) {
+                      alert(`Не удалось обновить количество: ${error.message}`);
                     }
+                    if (currentDishId) invalidate(currentDishId);
                   }}
                 />
                 <div className="w-16 text-sm text-muted-foreground">
-                  {Math.round(item.ingredient_price * item.quantity / 1000)} сом
+                  {Math.round(
+                    ingredientCostForRecipeItem({
+                      ingredientPrice: item.ingredient_price,
+                      ingredientUnit: item.ingredient_unit,
+                      recipeQuantity: item.quantity,
+                      recipeUnit: item.unit,
+                    })
+                  )} сом
                 </div>
                 <div className="w-6 flex justify-end">
                   <button onClick={() => handleRemoveIngredient(item.id)} className="w-5 h-5 flex items-center justify-center rounded bg-secondary hover:bg-red-100 hover:text-red-500 transition-colors">
@@ -582,59 +760,53 @@ export function DishEdit() {
                 </div>
               </div>
             ))}
-            {/* Add ingredient inline */}
             {showAddIngredient ? (
-              <div className="flex items-center py-1.5 gap-2">
-                <div className="w-40 relative">
-                  <input
-                    id="ing-search"
-                    ref={ingSearchRef}
-                    className="w-full px-2 py-1 border rounded text-sm bg-background"
-                    placeholder="Поиск ингредиента..."
-                    value={ingredientSearch}
-                    onChange={(e) => { setIngredientSearch(e.target.value); setSelectedIngId(''); setShowIngDropdown(true); }}
-                    onFocus={() => setShowIngDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowIngDropdown(false), 150)}
-                    autoFocus
-                  />
-                  {showIngDropdown && !selectedIngId && filteredIngredients.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border rounded-lg mt-1 shadow-lg z-10 max-h-48 overflow-auto">
-                      {filteredIngredients.slice(0, 7).map(ing => (
-                        <button
-                          key={ing.id}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-[#EFF0F4] transition-colors"
-                          onClick={() => {
-                            setSelectedIngId(ing.id);
-                            setIngredientSearch(ing.name);
-                            setShowIngDropdown(false);
-                            setTimeout(() => document.getElementById('ing-qty')?.focus(), 0);
-                          }}
-                        >
-                          {ing.name}
-                          <span className="text-muted-foreground ml-2">{ing.price} сом</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="w-16">
+              <div className="flex items-center py-1.5 gap-4">
+                <IngredientPicker
+                  ingredients={filteredIngredients}
+                  valueId={selectedIngId || null}
+                  autoFocus
+                  onSelect={(ingredientId) => {
+                    const ing = ingredients.find((i) => i.id === ingredientId);
+                    setSelectedIngId(ingredientId);
+                    setIngredientSearch(ing?.name || '');
+                    setTimeout(() => document.getElementById('ing-qty')?.focus(), 0);
+                  }}
+                />
+                <div className="w-20 relative">
                   <input
                     id="ing-qty"
                     ref={ingQtyRef}
-                    className="w-full px-2 py-0.5 border rounded text-sm bg-background text-right"
-                    placeholder="г"
+                    className="w-full pl-2 pr-8 py-0.5 border rounded text-sm bg-background text-right"
+                    placeholder="0"
                     inputMode="decimal"
                     value={newIngQty}
-                    onChange={(e) => setNewIngQty(e.target.value.replace(/[^0-9.,]/g, ''))}
+                    onChange={(e) => setNewIngQty(sanitizeDecimalString(e.target.value))}
+                    onBlur={() => {
+                      if (selectedIngId && newIngQty) handleAddIngredient();
+                    }}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddIngredient()}
                   />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                    {selectedIngredientUnit}
+                  </span>
                 </div>
-                <div className="w-16 flex justify-end gap-1">
-                  <button onClick={handleAddIngredient} className="px-2.5 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors">✓</button>
-                  <button onClick={() => { setShowAddIngredient(false); setIngredientSearch(''); setSelectedIngId(''); setShowIngDropdown(false); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
+                <div className="w-16 text-sm text-muted-foreground">
+                  {selectedIngredient && newIngQty
+                    ? `${Math.round(
+                        ingredientCostForRecipeItem({
+                          ingredientPrice: selectedIngredient.price || 0,
+                          ingredientUnit: selectedIngredient.unit,
+                          recipeQuantity: parseDecimalField(newIngQty),
+                          recipeUnit: selectedIngredientUnit,
+                        })
+                      )} сом`
+                    : ''}
                 </div>
-                <div className="w-6"></div>
-            </div>
+                <div className="w-6 flex justify-end">
+                  <button onClick={() => { setShowAddIngredient(false); setIngredientSearch(''); setSelectedIngId(''); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
+                </div>
+              </div>
             ) : (
               <button
                 onClick={() => setShowAddIngredient(true)}
@@ -660,8 +832,18 @@ export function DishEdit() {
       {/* Modifiers */}
       <div className="mb-10">
         <h3 className="text-lg font-semibold mb-4">Модификаторы</h3>
+        {!currentDishId && (
+          <p className="text-xs text-muted-foreground mb-3">
+            Сохраните блюдо, чтобы добавить группы и модификаторы.
+          </p>
+        )}
+        {!workshopId && (
+          <p className="text-xs text-amber-700 mb-3">
+            Выберите цех блюда, чтобы выбирать ингредиенты модификаторов по складам этого цеха.
+          </p>
+        )}
 
-        {dishModGroups.map((group, gi) => (
+        {currentDishId && dishModGroups.map((group, gi) => (
           <div key={group.id} className="mb-4">
             {/* Group header */}
             <div className="flex items-center gap-2 mb-1">
@@ -677,63 +859,63 @@ export function DishEdit() {
 
             {/* Modifiers list */}
             {group.modifiers.map((mod) => (
-              <div key={mod.id} className="flex items-center py-1.5 gap-2">
-                <div className="w-40 text-sm truncate">{mod.name}</div>
+              <div key={mod.id} className="flex items-center py-1.5 gap-4">
+                <IngredientPicker
+                  ingredients={modifierIngredients}
+                  valueId={mod.ingredient_id}
+                  onSelect={(ingredientId) => handleUpdateModifierIngredient(mod.id, ingredientId)}
+                  disabled={!workshopId}
+                />
                 <InputWithSuffix
                   suffix="сом"
                   className="w-20"
                   defaultValue={mod.price}
-                  onSave={(val) => supabase.from('modifiers').update({ price: val }).eq('id', mod.id)}
+                  onSave={async (val) => {
+                    const { error } = await supabase.from('modifiers').update({ price: val }).eq('id', mod.id);
+                    if (error) {
+                      alert(`Не удалось обновить цену модификатора: ${error.message}`);
+                    }
+                    if (currentDishId) invalidate(currentDishId);
+                  }}
                 />
                 <InputWithSuffix
-                  suffix="мл"
+                  suffix={mod.unit || 'мл'}
                   className="w-20"
                   defaultValue={mod.quantity || ''}
-                  onSave={(val) => supabase.from('modifiers').update({ quantity: val || null }).eq('id', mod.id)}
+                  onSave={async (val) => {
+                    const { error } = await supabase.from('modifiers').update({ quantity: val || null }).eq('id', mod.id);
+                    if (error) {
+                      alert(`Не удалось обновить количество модификатора: ${error.message}`);
+                    }
+                    if (currentDishId) invalidate(currentDishId);
+                  }}
                 />
-                <button
-                  onClick={() => handleRemoveModifier(mod.id)}
-                  className="w-5 h-5 flex items-center justify-center rounded bg-secondary hover:bg-red-100 transition-colors"
-                >
-                  <img src={crossIcon} className="w-3 h-3 opacity-40" />
-                </button>
+                <div className="w-6 flex justify-end">
+                  <button
+                    onClick={() => handleRemoveModifier(mod.id)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-secondary hover:bg-red-100 transition-colors"
+                  >
+                    <img src={crossIcon} className="w-3 h-3 opacity-40" />
+                  </button>
+                </div>
               </div>
             ))}
 
             {/* Add modifier to this group */}
-            {addingModToGroup === group.id || group.modifiers.length === 0 ? (
-              <div className="flex items-center py-1.5 gap-2">
-                <div className="w-40 relative">
-                  <input
-                    ref={modNameRef}
-                    className="w-full px-2 py-0.5 border rounded text-sm bg-background"
-                    placeholder="Поиск ингредиента..."
-                    value={modIngSearch}
-                    onChange={(e) => { setModIngSearch(e.target.value); setModIngId(''); setShowModIngDropdown(true); }}
-                    onFocus={() => setShowModIngDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowModIngDropdown(false), 150)}
-                    autoFocus
-                  />
-                  {showModIngDropdown && !modIngId && filteredModIngredients.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border rounded-lg mt-1 shadow-lg z-10 max-h-48 overflow-auto">
-                      {filteredModIngredients.slice(0, 7).map(ing => (
-                        <button
-                          key={ing.id}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-[#EFF0F4] transition-colors"
-                          onClick={() => {
-                            setModIngId(ing.id);
-                            setModIngName(ing.name);
-                            setModIngSearch(ing.name);
-                            setShowModIngDropdown(false);
-                            setTimeout(() => document.getElementById('mod-price')?.focus(), 0);
-                          }}
-                        >
-                          {ing.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            {(addingModToGroup === group.id || group.modifiers.length === 0) && (
+              <div className="flex items-center py-1.5 gap-4">
+                <IngredientPicker
+                  ingredients={filteredModIngredients}
+                  valueId={modIngId || null}
+                  disabled={!workshopId}
+                  autoFocus
+                  onSelect={(ingredientId) => {
+                    const ing = modifierIngredients.find((i) => i.id === ingredientId);
+                    setModIngId(ingredientId);
+                    setModIngSearch(ing?.name || '');
+                    handleAddModifier(group.id, ingredientId);
+                  }}
+                />
                 <div className="w-20 relative">
                   <input
                     id="mod-price"
@@ -741,8 +923,9 @@ export function DishEdit() {
                     placeholder="0"
                     inputMode="decimal"
                     value={newModPrice}
-                    onChange={(e) => setNewModPrice(e.target.value.replace(/[^0-9.,]/g, ''))}
+                    onChange={(e) => setNewModPrice(sanitizeDecimalString(e.target.value))}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddModifier(group.id)}
+                    disabled={!workshopId}
                   />
                   <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">сом</span>
                 </div>
@@ -752,30 +935,29 @@ export function DishEdit() {
                     placeholder="0"
                     inputMode="decimal"
                     value={newModQty}
-                    onChange={(e) => setNewModQty(e.target.value.replace(/[^0-9.,]/g, ''))}
+                    onChange={(e) => setNewModQty(sanitizeDecimalString(e.target.value))}
                     onKeyDown={(e) => e.key === 'Enter' && handleAddModifier(group.id)}
+                    disabled={!workshopId}
                   />
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">мл</span>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">{selectedModUnit}</span>
                 </div>
-                <div className="w-5 flex gap-1">
-                  <button onClick={() => handleAddModifier(group.id)} className="px-2.5 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors">✓</button>
-                  <button onClick={() => { setAddingModToGroup(null); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); setShowModIngDropdown(false); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
+                <div className="w-6 flex justify-end">
+                  <button onClick={() => { setAddingModToGroup(null); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
                 </div>
               </div>
-            ) : (
-              <button
-                onClick={() => { setAddingModToGroup(group.id); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); }}
-                className="py-1 text-sm transition-opacity hover:opacity-70"
-                style={{ color: '#5D4FF1' }}
-              >
-                + Добавить
-              </button>
             )}
+            <button
+              onClick={() => { setAddingModToGroup(group.id); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); }}
+              className="py-1 text-sm transition-opacity hover:opacity-70"
+              style={{ color: '#5D4FF1' }}
+            >
+              + Добавить
+            </button>
           </div>
         ))}
 
         {/* Add group: create new or pick existing */}
-        {showAddModGroup ? (
+        {currentDishId && (showAddModGroup ? (
           <div className="mt-2">
             {/* Create new — always on top */}
             <div className="flex items-center gap-2 mb-2">
@@ -814,22 +996,6 @@ export function DishEdit() {
               <button onClick={handleCreateModGroup} className="px-2.5 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors">✓</button>
               <button onClick={() => { setShowAddModGroup(false); setNewGroupName(''); }} className="px-2.5 py-1.5 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
             </div>
-
-            {/* Preset templates */}
-            {availablePresets.length > 0 && (
-              <div className="border rounded-lg p-1 max-h-36 overflow-auto">
-                {availablePresets.map(preset => (
-                  <button
-                    key={preset.name}
-                    className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-[#EFF0F4] transition-colors"
-                    onClick={() => handleAddPreset(preset)}
-                  >
-                    <span className="font-medium">{preset.name}</span>
-                    <span className="text-muted-foreground"> — {preset.modifiers.map(m => m.name).join(', ')}</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         ) : (
           <button
@@ -839,7 +1005,7 @@ export function DishEdit() {
           >
             Новый набор модификаторов
           </button>
-        )}
+        ))}
       </div>
 
       {/* Bottom bar */}
