@@ -141,3 +141,36 @@ export function useDeleteTransaction() {
     },
   });
 }
+
+export interface UpdateTransaction {
+  type: CreatableTransactionType;
+  payment_method: PaymentMethod;
+  amount: number;
+  note: string;
+  category_id: string | null;
+  transaction_at: string;
+}
+
+export function useUpdateTransaction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...tx }: UpdateTransaction & { id: string }) => {
+      const { error } = await supabase
+        .from('cash_transactions')
+        .update({
+          type: tx.type,
+          payment_method: tx.payment_method,
+          amount: tx.amount,
+          note: tx.note || null,
+          category_id: tx.category_id,
+          transaction_at: tx.transaction_at,
+        })
+        .eq('id', id)
+        .eq('venue_id', VENUE_ID);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      invalidateCashAndShifts(qc);
+    },
+  });
+}

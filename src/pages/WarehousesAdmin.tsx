@@ -7,8 +7,6 @@ import { useDeleteWarehouse, useRenameWarehouse } from '@/hooks/useWarehouse';
 import searchIcon from '@/assets/icons/search.svg';
 import { somRounded } from '@/lib/formatSom';
 
-const GRID_TEMPLATE = '220px 100px 120px 120px 140px';
-
 export function WarehousesAdmin() {
   const { warehouseId } = useParams<{ warehouseId: string }>();
   const navigate = useNavigate();
@@ -137,53 +135,42 @@ export function WarehousesAdmin() {
             </div>
           </div>
 
-          <div
-            className="-mx-3 w-fit"
-            style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE }}
-          >
-            <div className="col-span-5 grid grid-cols-subgrid items-center pt-4 pb-2 px-3 text-sm font-semibold text-muted-foreground sticky top-0 z-10 bg-white">
-              <div className="pr-6">Название</div>
-              <div className="pr-6">Ед.</div>
-              <div className="pr-6 text-right">Остаток</div>
-              <div className="pr-6 text-right">Себестоимость</div>
-              <div className="pr-6 text-right">Сумма остатков</div>
-            </div>
-            <div className="col-span-5 grid grid-cols-subgrid">
+          <table className="w-full table-fixed border-separate border-spacing-0">
+            <thead>
+              <tr className="text-sm font-semibold text-foreground">
+                <th scope="col" className="text-left py-3 px-3 w-[220px]">Название</th>
+                <th scope="col" className="text-left py-3 px-3 w-[100px]">Ед.</th>
+                <th scope="col" className="text-right py-3 px-3 w-[120px]">Остаток</th>
+                <th scope="col" className="text-right py-3 px-3 w-[120px]">Себестоимость</th>
+                <th scope="col" className="text-right py-3 px-3 w-[140px]">Сумма остатков</th>
+              </tr>
+            </thead>
+            <tbody>
               {ingredientsPending && (
-                <div className="col-span-5 py-12 text-center text-sm text-muted-foreground">
-                  Загрузка…
-                </div>
+                <tr><td colSpan={5} className="py-12 text-center text-sm text-muted-foreground">Загрузка…</td></tr>
               )}
-              {!ingredientsPending &&
-                filteredIngredients.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    onClick={() =>
-                      navigate(`/menu/ingredients/${item.id}?warehouse=${selectedWarehouse.id}&back=warehouse`)
-                    }
-                    className="col-span-5 grid grid-cols-subgrid items-center py-2 px-3 text-left hover:bg-[#EFF0F4] transition-colors even:bg-muted/10"
-                  >
-                    <div className="text-sm font-semibold truncate pr-6">{item.name}</div>
-                    <div className="text-sm text-muted-foreground pr-6">{item.unit}</div>
-                    <div className="text-sm text-right tabular-nums pr-6">
-                      {item.stock_quantity}
-                    </div>
-                    <div className="text-sm text-right tabular-nums text-muted-foreground pr-6">
-                      {somRounded(item.price)} сом
-                    </div>
-                    <div className="text-sm text-right tabular-nums font-medium pr-6">
-                      {somRounded(item.price * item.stock_quantity)} сом
-                    </div>
-                  </button>
-                ))}
               {!ingredientsPending && filteredIngredients.length === 0 && (
-                <div className="col-span-5 py-12 text-center text-sm text-muted-foreground">
+                <tr><td colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
                   {search ? 'Ничего не найдено' : 'На этом складе пока нет ингредиентов'}
-                </div>
+                </td></tr>
               )}
-            </div>
-          </div>
+              {!ingredientsPending && filteredIngredients.map((item) => (
+                <tr
+                  key={item.id}
+                  className="cursor-pointer hover:bg-muted/30 transition-colors"
+                  onClick={() => navigate(`/menu/ingredients/${item.id}?warehouse=${selectedWarehouse.id}&back=warehouse`)}
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/menu/ingredients/${item.id}?warehouse=${selectedWarehouse.id}&back=warehouse`); } }}
+                >
+                  <td className="py-2 px-3 text-sm font-semibold truncate">{item.name}</td>
+                  <td className="py-2 px-3 text-sm text-muted-foreground">{item.unit}</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums">{item.stock_quantity}</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums text-muted-foreground">{somRounded(item.price)} сом</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums font-medium">{somRounded(item.price * item.stock_quantity)} сом</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </>
       )}
     </div>

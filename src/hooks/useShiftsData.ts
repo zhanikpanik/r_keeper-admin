@@ -160,6 +160,41 @@ export function useShifts() {
   return useQuery({
     queryKey: SHIFTS_QUERY_KEY,
     queryFn: fetchShifts,
+    // 2 min: shift list changes slowly
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+export function useActiveShift() {
+  return useQuery({
+    queryKey: ['shifts', VENUE_ID, 'active'] as const,
+    queryFn: async (): Promise<CashShift | null> => {
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('venue_id', VENUE_ID)
+        .is('closed_at', null)
+        .order('opened_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return {
+        id: data.id,
+        openTime: data.opened_at ? formatShiftTime(data.opened_at) : '',
+        closeTime: null,
+        openIso: data.opened_at,
+        closeIso: null,
+        startBalance: Number(data.starting_cash ?? data.opening_balance ?? 0),
+        collection: null,
+        expectedCash: Number(data.expected_cash_at_close ?? 0),
+        difference: null,
+        closingCashCount: null,
+        openingNote: data.opening_note ?? null,
+        closingNote: null,
+      };
+    },
+    // 30s: active shift is real-time (opening/closing)
     staleTime: 30 * 1000,
   });
 }

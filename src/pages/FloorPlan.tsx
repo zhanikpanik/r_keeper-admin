@@ -1,9 +1,9 @@
 import { FloorPlanGrid } from '@/components/floor-plan/FloorPlanGrid';
 
 export function FloorPlan() {
-  return (
-    <div className="p-6">
-      <FloorPlanGrid />
-    </div>
-  );
+ return (
+  <div className="p-6">
+   <FloorPlanGrid />
+  </div>
+ );
 }

@@ -102,22 +102,20 @@ export function Deliveries() {
 
       {isLoading && <p className="text-sm text-muted-foreground py-4">Загрузка…</p>}
 
-      <div
-        className="-mx-3 w-fit"
-        style={{ display: 'grid', gridTemplateColumns: DELIVERY_GRID_TEMPLATE }}
-      >
-        <div className="col-span-8 grid grid-cols-subgrid items-center pt-4 pb-2 px-3 text-sm font-semibold text-muted-foreground sticky top-0 z-10 bg-white">
-          <div className="pr-6">Дата</div>
-          <div className="pr-6">Поставщик</div>
-          <div className="pr-6">Склад</div>
-          <div className="pr-6 text-left">Позиции</div>
-          <div className="pr-6 text-center">Статус</div>
-          <div className="pr-6 text-right">Сумма</div>
-          <div className="min-w-0 px-4" aria-hidden />
-          <div />
-        </div>
-
-        <div className="col-span-8 grid grid-cols-subgrid">
+      <table className="w-full table-fixed border-separate border-spacing-0">
+        <thead>
+          <tr className="text-sm font-semibold text-foreground">
+            <th scope="col" className="text-left py-3 px-3 w-[100px]">Дата</th>
+            <th scope="col" className="text-left py-3 px-3 w-[140px]">Поставщик</th>
+            <th scope="col" className="text-left py-3 px-3 w-[120px]">Склад</th>
+            <th scope="col" className="text-left py-3 px-3 w-[112px]">Позиции</th>
+            <th scope="col" className="text-center py-3 px-3 w-[100px]">Статус</th>
+            <th scope="col" className="text-right py-3 px-3 w-[100px]">Сумма</th>
+            <th scope="col" className="py-3 px-3" />
+            <th scope="col" className="w-[32px]" />
+          </tr>
+        </thead>
+        <tbody>
           {filteredDeliveries.map((delivery: DeliveryRow) => {
             const isCancelled = delivery.status === 'Отменено';
             const editUrl = `/warehouse/deliveries/${delivery.id}/edit`;
@@ -125,146 +123,98 @@ export function Deliveries() {
             const canExpand = n > 0;
 
             return (
-              <div
+              <>
+              <tr
                 key={delivery.id}
-                className={`col-span-8 grid grid-cols-subgrid group ${expandedId === delivery.id ? 'bg-[#EFF0F4]' : 'hover:bg-[#EFF0F4]'} transition-colors even:bg-muted/10`}
+                className={`group cursor-pointer ${expandedId === delivery.id ? 'bg-[#EFF0F4]' : 'hover:bg-[#EFF0F4]'} transition-colors even:bg-muted/10 ${isCancelled ? 'opacity-50' : ''}`}
+                onClick={() => navigate(editUrl)}
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(editUrl);
+                  }
+                }}
               >
-                <div
-                  role="link"
-                  tabIndex={0}
-                  className={`grid grid-cols-subgrid col-span-8 items-center py-2 px-3 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm ${isCancelled ? 'opacity-50' : ''}`}
-                  onClick={() => navigate(editUrl)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      navigate(editUrl);
-                    }
-                  }}
-                >
-                  <div className={`pr-6 text-sm text-muted-foreground ${isCancelled ? 'line-through' : ''}`}>
-                    {new Date(delivery.date).toLocaleDateString('ru-RU', {
-                      day: '2-digit',
-                      month: '2-digit',
-                    })}
-                  </div>
-                  <div className={`pr-6 text-sm font-semibold truncate ${isCancelled ? 'line-through' : ''}`}>
-                    {delivery.supplier}
-                  </div>
-                  <div className={`pr-6 text-sm truncate ${isCancelled ? 'line-through' : ''}`}>
-                    {delivery.warehouse_name || '—'}
-                  </div>
-                  <div className="pr-6 text-left text-sm">
-                    {canExpand ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedId(expandedId === delivery.id ? null : delivery.id);
-                        }}
-                        className="text-sm font-medium text-[#5D4FF1] hover:text-[#F70000] transition-colors cursor-pointer"
-                      >
-                        {`${n} ${getPositionPlural(n)}`}
-                      </button>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
-                  </div>
-                  <div className="pr-6 flex justify-center">
-                    <span
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${getStatusColor(delivery.status)}`}
-                    >
-                      {delivery.status.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className={`pr-6 text-sm text-right tabular-nums font-medium text-foreground ${isCancelled ? 'line-through' : ''}`}>
-                    {delivery.amount.toLocaleString()}
-                  </div>
-                  <div className="min-w-0 px-4 flex flex-wrap gap-1 justify-end">
+                <td className={`py-2 px-3 text-sm text-muted-foreground ${isCancelled ? 'line-through' : ''}`}>
+                  {new Date(delivery.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                </td>
+                <td className={`py-2 px-3 text-sm font-semibold truncate ${isCancelled ? 'line-through' : ''}`}>
+                  {delivery.supplier}
+                </td>
+                <td className={`py-2 px-3 text-sm truncate ${isCancelled ? 'line-through' : ''}`}>
+                  {delivery.warehouse_name || '—'}
+                </td>
+                <td className="py-2 px-3 text-sm">
+                  {canExpand ? (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setExpandedId(expandedId === delivery.id ? null : delivery.id); }} className="text-sm font-medium text-primary hover:text-primary/70 transition-colors cursor-pointer">
+                      {`${n} ${getPositionPlural(n)}`}
+                    </button>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td className="py-2 px-3 text-center">
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${getStatusColor(delivery.status)}`}>
+                    {delivery.status.toUpperCase()}
+                  </span>
+                </td>
+                <td className={`py-2 px-3 text-sm text-right tabular-nums font-medium text-foreground ${isCancelled ? 'line-through' : ''}`}>
+                  {delivery.amount.toLocaleString()}
+                </td>
+                <td className="py-2 px-3">
+                  <div className="flex flex-wrap gap-1 justify-end">
                     {delivery.status === 'Черновик' && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          sendTransit.mutate(delivery.id);
-                        }}
-                        disabled={sendTransit.isPending}
-                        className={DELIVERY_ACTION_CLASS}
-                      >
-                        <Truck className="w-4 h-4 shrink-0" aria-hidden />
-                        В путь
+                      <button type="button" onClick={(e) => { e.stopPropagation(); sendTransit.mutate(delivery.id); }} disabled={sendTransit.isPending} className={DELIVERY_ACTION_CLASS}>
+                        <Truck className="w-4 h-4 shrink-0" aria-hidden />В путь
                       </button>
                     )}
                     {delivery.status === 'В пути' && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          receiveDelivery.mutate(delivery.id);
-                        }}
-                        disabled={receiveDelivery.isPending}
-                        className={DELIVERY_ACTION_CLASS}
-                      >
-                        <PackageCheck className="w-4 h-4 shrink-0" aria-hidden />
-                        Принять
+                      <button type="button" onClick={(e) => { e.stopPropagation(); receiveDelivery.mutate(delivery.id); }} disabled={receiveDelivery.isPending} className={DELIVERY_ACTION_CLASS}>
+                        <PackageCheck className="w-4 h-4 shrink-0" aria-hidden />Принять
                       </button>
                     )}
                     {isCancelled && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          restoreDelivery.mutate(delivery.id);
-                        }}
-                        disabled={restoreDelivery.isPending}
-                        className={DELIVERY_ACTION_CLASS}
-                      >
-                        <RotateCcw className="w-4 h-4 shrink-0" aria-hidden />
-                        Восстановить
+                      <button type="button" onClick={(e) => { e.stopPropagation(); restoreDelivery.mutate(delivery.id); }} disabled={restoreDelivery.isPending} className={DELIVERY_ACTION_CLASS}>
+                        <RotateCcw className="w-4 h-4 shrink-0" aria-hidden />Восстановить
                       </button>
                     )}
                   </div>
-                  <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!isCancelled && (
-                      <button
-                        type="button"
-                        className="p-1 text-red-500 opacity-40 hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          cancelDelivery.mutate(delivery.id);
-                        }}
-                        title="Отменить"
-                      >
-                        <img src={crossIcon} className="w-4 h-4" alt="" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {expandedId === delivery.id && canExpand && (
-                  <div className="col-span-8 pb-2 pl-4 mt-1 pt-1 ml-6">
+                </td>
+                <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {!isCancelled && (
+                    <button type="button" className="p-1 text-red-500 opacity-40 hover:opacity-100" onClick={(e) => { e.stopPropagation(); cancelDelivery.mutate(delivery.id); }} title="Отменить">
+                      <img src={crossIcon} className="w-4 h-4" alt="" />
+                    </button>
+                  )}
+                </td>
+              </tr>
+              {expandedId === delivery.id && canExpand && (
+                <tr key={`${delivery.id}-detail`} className="bg-[#EFF0F4]">
+                  <td colSpan={8} className="pb-2 pt-0 pl-10">
                     <div className="max-w-sm space-y-0.5">
                       {delivery.items.map((item) => (
                         <div key={item.id} className="text-sm py-0.5 pl-3 text-muted-foreground">
                           <span className="text-foreground font-medium">{item.name}</span>
-                          {' — '}
-                          {item.quantity} {item.unit},{' '}
+                          {' — '}{item.quantity} {item.unit},{' '}
                           {item.price.toLocaleString('ru-RU')} сом, итого{' '}
                           {(item.quantity * item.price).toLocaleString('ru-RU')} сом
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
+                  </td>
+                </tr>
+              )}
+              </>
             );
           })}
           {!isLoading && filteredDeliveries.length === 0 && (
-            <div className="col-span-8 py-12 text-center text-muted-foreground text-sm">
+            <tr><td colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
               {search ? 'Ничего не найдено' : 'Нет поставок. Нажмите «+ Добавить»'}
-            </div>
+            </td></tr>
           )}
-        </div>
-      </div>
+        </tbody>
+      </table>
     </div>
   );
 }

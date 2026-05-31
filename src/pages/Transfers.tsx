@@ -11,9 +11,6 @@ import {
   type TransferRow,
 } from '@/hooks/useWarehouse';
 
-/** Positions column `auto` so it doesn’t stretch and leave a gap before actions */
-const TRANSFER_GRID_TEMPLATE = '100px minmax(160px, 1fr) auto 8rem 32px';
-
 /** Aligned width for status column action buttons (no border) */
 const STATUS_ACTION_CLASS =
   'inline-flex min-w-[6.5rem] shrink-0 cursor-pointer items-center justify-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium text-[#5D4FF1] hover:text-[#4538c4] hover:bg-[#5D4FF1]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
@@ -34,7 +31,6 @@ export function Transfers() {
 
   const { data: transfers = [], isLoading, isError, error } = useWarehouseTransfers();
   const postTransfer = usePostTransfer();
-
   const cancelTransfer = useCancelTransfer();
   const restoreTransfer = useRestoreTransfer();
 
@@ -83,155 +79,121 @@ export function Transfers() {
 
       {isLoading && <p className="text-sm text-muted-foreground py-4">Загрузка…</p>}
 
-      <div
-        className="-mx-3 w-fit"
-        style={{ display: 'grid', gridTemplateColumns: TRANSFER_GRID_TEMPLATE }}
-      >
-        <div className="col-span-5 grid grid-cols-subgrid items-center pt-4 pb-2 px-3 text-sm font-semibold text-muted-foreground sticky top-0 z-10 bg-white">
-          <div className="pr-6">Дата</div>
-          <div className="pr-6">Маршрут</div>
-          <div className="pr-6 text-left">Позиции</div>
-          <div className="pr-6 text-center" aria-hidden />
-          <div />
-        </div>
+      {!isLoading && (
+        <table className="w-full table-fixed border-separate border-spacing-0">
+          <thead>
+            <tr className="text-sm font-semibold text-foreground">
+              <th scope="col" className="text-left py-3 px-3 w-[100px]">Дата</th>
+              <th scope="col" className="text-left py-3 px-3 w-[200px]">Маршрут</th>
+              <th scope="col" className="text-left py-3 px-3">Позиции</th>
+              <th scope="col" className="text-center py-3 px-3 w-[128px]" />
+              <th scope="col" className="w-[80px]" />
+              <th scope="col" className="w-[36px]" />
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center text-muted-foreground text-sm">
+                  {search ? 'Ничего не найдено' : 'Нет перемещений. Нажмите «+ Перемещение»'}
+                </td>
+              </tr>
+            ) : (
+              filtered.map((tr: TransferRow) => {
+                const isCancelled = tr.status === 'Отменено';
+                const isDraft = tr.status === 'Черновик';
+                const isPosted = tr.status === 'Проведено';
+                const editUrl = `/warehouse/transfers/${tr.id}/edit`;
+                const n = tr.items.length;
+                const singleItem = n === 1 ? tr.items[0] : null;
+                const canExpand = n > 1;
 
-        <div className="col-span-5 grid grid-cols-subgrid">
-          {filtered.map((tr: TransferRow) => {
-            const isCancelled = tr.status === 'Отменено';
-            const isDraft = tr.status === 'Черновик';
-            const isPosted = tr.status === 'Проведено';
-            const editUrl = `/warehouse/transfers/${tr.id}/edit`;
-            const n = tr.items.length;
-            const singleItem = n === 1 ? tr.items[0] : null;
-            const canExpand = n > 1;
-
-            return (
-              <div
-                key={tr.id}
-                className={`col-span-5 grid grid-cols-subgrid group ${expandedId === tr.id && canExpand ? 'bg-[#EFF0F4]' : 'hover:bg-[#EFF0F4]'} transition-colors even:bg-muted/10`}
-              >
-                <div
-                  role="link"
-                  tabIndex={0}
-                  className={`grid grid-cols-subgrid col-span-5 items-center py-2 px-3 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm ${isCancelled ? 'opacity-60 text-muted-foreground' : ''}`}
-                  onClick={() => navigate(editUrl)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      navigate(editUrl);
-                    }
-                  }}
-                >
-                  <div className={`pr-6 text-sm ${isCancelled ? 'text-muted-foreground line-through' : 'text-muted-foreground'}`}>
-                    {new Date(tr.date).toLocaleDateString('ru-RU', {
-                      day: '2-digit',
-                      month: '2-digit',
-                    })}
-                  </div>
-                  <div
-                    className={`pr-6 text-sm font-semibold truncate ${isCancelled ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-                  >
-                    {tr.fromWarehouse && tr.toWarehouse ? `${tr.fromWarehouse} → ${tr.toWarehouse}` : '—'}
-                  </div>
-                  <div className="pr-3 text-left text-sm min-w-0 max-w-md">
-                    {singleItem ? (
-                      <span
-                        className={`text-sm truncate block ${isCancelled ? 'line-through text-muted-foreground' : 'text-foreground'}`}
-                        title={`${singleItem.name} — ${singleItem.quantity} ${singleItem.unit}`}
-                      >
-                        <span className="font-medium">{singleItem.name}</span>
-                        {' — '}
-                        {singleItem.quantity} {singleItem.unit}
-                      </span>
-                    ) : canExpand ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                return (
+                  <>
+                    <tr
+                      key={tr.id}
+                      className={`group cursor-pointer ${expandedId === tr.id && canExpand ? 'bg-[#EFF0F4]' : 'hover:bg-muted/30'} transition-colors ${isCancelled ? 'opacity-60 text-muted-foreground' : ''}`}
+                      onClick={canExpand ? () => setExpandedId(expandedId === tr.id ? null : tr.id) : undefined}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && canExpand) {
+                          e.preventDefault();
                           setExpandedId(expandedId === tr.id ? null : tr.id);
-                        }}
-                        className={`text-sm font-medium text-[#5D4FF1] hover:text-[#F70000] transition-colors cursor-pointer ${isCancelled ? 'line-through' : ''}`}
-                      >
-                        {`${n} ${getPositionPlural(n)}`}
-                      </button>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
+                        }
+                      }}
+                    >
+                      <td className={`py-2 px-3 text-sm ${isCancelled ? 'text-muted-foreground line-through' : 'text-muted-foreground'}`}>
+                        {new Date(tr.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                      </td>
+                      <td className={`py-2 px-3 text-sm font-semibold truncate ${isCancelled ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                        {tr.fromWarehouse && tr.toWarehouse ? `${tr.fromWarehouse} → ${tr.toWarehouse}` : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-sm min-w-0 max-w-md">
+                        {singleItem ? (
+                          <span
+                            className={`text-sm truncate block ${isCancelled ? 'line-through text-muted-foreground' : 'text-foreground'}`}
+                            title={`${singleItem.name} — ${singleItem.quantity} ${singleItem.unit}`}
+                          >
+                            <span className="font-medium">{singleItem.name}</span>
+                            {' — '}{singleItem.quantity} {singleItem.unit}
+                          </span>
+                        ) : canExpand ? (
+                          <span className={`text-sm ${isCancelled ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                            {`${n} ${getPositionPlural(n)}`}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        {isDraft && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); postTransfer.mutate(tr.id); }} disabled={postTransfer.isPending} className={STATUS_ACTION_CLASS}>
+                            <Check className="w-4 h-4 shrink-0" aria-hidden />Провести
+                          </button>
+                        )}
+                        {isPosted && (
+                          <span className="inline-flex min-w-[6.5rem] shrink-0 items-center justify-center px-3 py-1 text-sm font-semibold text-green-600">Проведено</span>
+                        )}
+                        {isCancelled && (
+                          <button type="button" onClick={(e) => { e.stopPropagation(); restoreTransfer.mutate(tr.id); }} disabled={restoreTransfer.isPending} className={STATUS_ACTION_CLASS}>
+                            <RotateCcw className="w-4 h-4 shrink-0" aria-hidden />Восстановить
+                          </button>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); navigate(editUrl); }} className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer">
+                          Изменить
+                        </button>
+                      </td>
+                      <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!isCancelled && (
+                          <button type="button" className="cursor-pointer p-1 text-red-500 opacity-40 hover:opacity-100" onClick={(e) => { e.stopPropagation(); cancelTransfer.mutate(tr.id); }}>
+                            <img src={crossIcon} className="w-4 h-4" alt="" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {expandedId === tr.id && canExpand && (
+                      <tr key={`${tr.id}-detail`} className="bg-[#EFF0F4]">
+                        <td colSpan={6} className="pb-2 pt-0 pl-10">
+                          <div className="max-w-sm space-y-0.5">
+                            {tr.items.map((item) => (
+                              <div key={item.id} className="text-sm py-0.5 pl-3 text-muted-foreground">
+                                <span className="text-foreground font-medium">{item.name}</span>
+                                {' — '}{item.quantity} {item.unit}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                  <div className="flex justify-center items-center">
-                    {isDraft && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          postTransfer.mutate(tr.id);
-                        }}
-                        disabled={postTransfer.isPending}
-                        className={STATUS_ACTION_CLASS}
-                      >
-                        <Check className="w-4 h-4 shrink-0" aria-hidden />
-                        Провести
-                      </button>
-                    )}
-                    {isPosted && (
-                      <span className="inline-flex min-w-[6.5rem] shrink-0 items-center justify-center px-3 py-1 text-sm font-semibold text-green-600">
-                        Проведено
-                      </span>
-                    )}
-                    {isCancelled && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          restoreTransfer.mutate(tr.id);
-                        }}
-                        disabled={restoreTransfer.isPending}
-                        className={STATUS_ACTION_CLASS}
-                      >
-                        <RotateCcw className="w-4 h-4 shrink-0" aria-hidden />
-                        Восстановить
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                    {!isCancelled && (
-                      <button
-                        type="button"
-                        className="cursor-pointer p-1 text-red-500 opacity-40 hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          cancelTransfer.mutate(tr.id);
-                        }}
-                      >
-                        <img src={crossIcon} className="w-4 h-4" alt="" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {expandedId === tr.id && n > 1 && (
-                  <div className="col-span-5 pb-2 pl-4 mt-1 pt-1 ml-6">
-                    <div className="max-w-sm space-y-0.5">
-                      {tr.items.map((item) => (
-                        <div key={item.id} className="text-sm py-0.5 pl-3 text-muted-foreground">
-                          <span className="text-foreground font-medium">{item.name}</span>
-                          {' — '}
-                          {item.quantity} {item.unit}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {!isLoading && filtered.length === 0 && (
-            <div className="col-span-5 py-12 text-center text-muted-foreground text-sm">
-              {search ? 'Ничего не найдено' : 'Нет перемещений. Нажмите «+ Перемещение»'}
-            </div>
-          )}
-        </div>
-      </div>
+                  </>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

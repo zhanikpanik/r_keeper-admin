@@ -236,7 +236,8 @@ export function useChecks() {
   return useQuery({
     queryKey: ['checks', VENUE_ID],
     queryFn: fetchChecks,
-    staleTime: 30 * 1000,
+    // 60s: checks are dynamic but 30s was too chatty
+    staleTime: 60 * 1000,
   });
 }
 
@@ -245,6 +246,6 @@ export function useCheck(orderId: string | undefined) {
     queryKey: ['check', VENUE_ID, orderId],
     queryFn: () => fetchCheckById(orderId!),
     enabled: Boolean(orderId),
-    staleTime: 30 * 1000,
+    staleTime: 60 * 1000,
   });
 }

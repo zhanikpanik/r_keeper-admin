@@ -273,7 +273,7 @@ async function createDish(input: {
   return data as { id: string };
 }
 
-async function createCategory(input: { name: string; colorHex: string }) {
+async function createCategory(input: { name: string }) {
   const trimmed = input.name.trim();
   if (!trimmed) throw new Error('Укажите название категории');
 
@@ -290,22 +290,19 @@ async function createCategory(input: { name: string; colorHex: string }) {
   const { error } = await supabase.from('categories').insert({
     venue_id: VENUE_ID,
     name: trimmed,
-    color_hex: input.colorHex,
+    color_hex: '',
     sort_order: nextSort,
   });
   if (error) throw error;
 }
 
-async function updateCategory(input: { id: string; name: string; colorHex: string }) {
+async function updateCategory(input: { id: string; name: string }) {
   const trimmed = input.name.trim();
   if (!trimmed) throw new Error('Укажите название категории');
 
   const { error } = await supabase
     .from('categories')
-    .update({
-      name: trimmed,
-      color_hex: input.colorHex,
-    })
+    .update({ name: trimmed })
     .eq('id', input.id)
     .eq('venue_id', VENUE_ID);
   if (error) throw error;
@@ -610,7 +607,8 @@ export function useIngredients(
   return useQuery({
     queryKey: ['ingredients', workshopId ?? 'all'],
     queryFn: () => fetchIngredientsList(workshopId),
-    staleTime: 30 * 1000,
+    // 5 min: ingredients list is relatively static in admin usage
+    staleTime: 5 * 60 * 1000,
     enabled: options?.enabled !== false,
   });
 }
@@ -622,7 +620,8 @@ export function useWarehouseIngredients(
   return useQuery({
     queryKey: ['warehouse-ingredients', warehouseId ?? 'none'],
     queryFn: () => fetchWarehouseIngredientsList(warehouseId),
-    staleTime: 30 * 1000,
+    // 5 min: warehouse ingredients table is static between deliveries
+    staleTime: 5 * 60 * 1000,
     enabled: options?.enabled !== false,
   });
 }
