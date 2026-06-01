@@ -44,22 +44,22 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
   // Expenses today
   const { data: expensesToday } = await supabase
-    .from('cash_transactions')
+    .from('cash_movements')
     .select('amount')
     .eq('venue_id', VENUE_ID)
-    .eq('type', 'expense')
-    .gte('transaction_at', todayStart)
-    .lt('transaction_at', todayEnd);
+    .eq('movement_type', 'float_out')
+    .gte('occurred_at', todayStart)
+    .lt('occurred_at', todayEnd);
   const expenses = (expensesToday || []).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   // Expenses yesterday
   const { data: expensesYesterdayRows } = await supabase
-    .from('cash_transactions')
+    .from('cash_movements')
     .select('amount')
     .eq('venue_id', VENUE_ID)
-    .eq('type', 'expense')
-    .gte('transaction_at', yesterdayStart)
-    .lt('transaction_at', todayStart);
+    .eq('movement_type', 'float_out')
+    .gte('occurred_at', yesterdayStart)
+    .lt('occurred_at', todayStart);
   const expensesYesterday = (expensesYesterdayRows || []).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   // Low stock ingredients (quantity < 5)
@@ -80,17 +80,17 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
   // Recent transactions (last 5)
   const { data: recentTx } = await supabase
-    .from('cash_transactions')
-    .select('id, type, amount, note, transaction_at')
+    .from('cash_movements')
+    .select('id, movement_type, amount, note, occurred_at')
     .eq('venue_id', VENUE_ID)
-    .order('transaction_at', { ascending: false })
+    .order('occurred_at', { ascending: false })
     .limit(5);
   const recentTransactions = (recentTx || []).map((t) => ({
     id: t.id as string,
-    type: t.type as string,
+    type: (t.movement_type as string) === 'float_out' ? 'expense' : 'income',
     amount: Number(t.amount) || 0,
     note: t.note as string | null,
-    transaction_at: t.transaction_at as string,
+    transaction_at: t.occurred_at as string,
   }));
 
   return { revenue, revenueYesterday, expenses, expensesYesterday, stockAlerts, recentTransactions };

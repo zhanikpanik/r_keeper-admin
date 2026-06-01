@@ -10,6 +10,7 @@ import {
   parseCashTxPaymentMethod,
   parseCashTxShiftId,
   parseCashTxType,
+  txTypeToMovementType,
 } from '@/lib/cashTransactionParse';
 
 /** POS RPC uses income / expense / collection; `other` = unknown legacy values */
@@ -49,17 +50,18 @@ function invalidateCashAndShifts(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: SHIFTS_QUERY_KEY });
 }
 
-function mapCashTransactionRow(row: Record<string, unknown>): CashTransaction {
+/** Map a cash_movements row into the admin CashTransaction shape */
+function mapCashMovementRow(row: Record<string, unknown>): CashTransaction {
   return {
     id: String(row.id ?? ''),
     venue_id: String(row.venue_id ?? ''),
     shift_id: parseCashTxShiftId(row.shift_id),
-    type: parseCashTxType(row.type),
-    payment_method: parseCashTxPaymentMethod(row.payment_method),
+    type: parseCashTxType(row.movement_type),         // movement_type → type
+    payment_method: parseCashTxPaymentMethod(null),    // cash_movements has no payment_method — default cash
     amount: parseCashTxAmount(row.amount),
     note: row.note != null && row.note !== '' ? String(row.note) : null,
-    category_id: row.category_id != null && row.category_id !== '' ? String(row.category_id) : null,
-    transaction_at: String(row.transaction_at ?? ''),
+    category_id: null,                                  // cash_movements has no category_id
+    transaction_at: String(row.occurred_at ?? row.created_at ?? ''), // occurred_at → transaction_at
     created_at: String(row.created_at ?? ''),
   };
 }
@@ -69,18 +71,18 @@ export function useTransactions(from?: string, to?: string) {
     queryKey: [...QUERY_KEY, from, to],
     queryFn: async () => {
       let q = supabase
-        .from('cash_transactions')
+        .from('cash_movements')                          // real table
         .select('*')
         .eq('venue_id', VENUE_ID)
-        .order('transaction_at', { ascending: false });
+        .order('occurred_at', { ascending: false });     // real column
 
-      if (from) q = q.gte('transaction_at', from);
-      if (to) q = q.lte('transaction_at', to);
+      if (from) q = q.gte('occurred_at', from);
+      if (to) q = q.lte('occurred_at', to);
 
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? [])
-        .map((r) => mapCashTransactionRow(r as Record<string, unknown>))
+        .map((r) => mapCashMovementRow(r as Record<string, unknown>))
         .filter((t) => t.id.length > 0);
     },
   });
@@ -93,14 +95,14 @@ export function useShiftTransactions(shiftId: string | number | null) {
       if (shiftId === null) return [];
       const sid = String(shiftId);
       const { data, error } = await supabase
-        .from('cash_transactions')
+        .from('cash_movements')                          // real table
         .select('*')
         .eq('venue_id', VENUE_ID)
         .eq('shift_id', sid)
-        .order('transaction_at', { ascending: false });
+        .order('occurred_at', { ascending: false });     // real column
       if (error) throw error;
       return (data ?? [])
-        .map((r) => mapCashTransactionRow(r as Record<string, unknown>))
+        .map((r) => mapCashMovementRow(r as Record<string, unknown>))
         .filter((t) => t.id.length > 0);
     },
     enabled: shiftId !== null,
@@ -111,15 +113,14 @@ export function useAddTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (tx: NewTransaction) => {
-      const { error } = await supabase.from('cash_transactions').insert({
+      const { error } = await supabase.from('cash_movements').insert({
         venue_id: VENUE_ID,
         shift_id: tx.shift_id,
-        type: tx.type,
-        payment_method: tx.payment_method,
+        movement_type: txTypeToMovementType(tx.type),  // type → movement_type
         amount: tx.amount,
         note: tx.note || null,
-        category_id: tx.category_id,
-        transaction_at: tx.transaction_at,
+        occurred_at: tx.transaction_at,                  // transaction_at → occurred_at
+        // payment_method and category_id not on cash_movements
       });
       if (error) throw error;
     },
@@ -133,7 +134,7 @@ export function useDeleteTransaction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('cash_transactions').delete().eq('id', id);
+      const { error } = await supabase.from('cash_movements').delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -156,14 +157,13 @@ export function useUpdateTransaction() {
   return useMutation({
     mutationFn: async ({ id, ...tx }: UpdateTransaction & { id: string }) => {
       const { error } = await supabase
-        .from('cash_transactions')
+        .from('cash_movements')                          // real table
         .update({
-          type: tx.type,
-          payment_method: tx.payment_method,
+          movement_type: txTypeToMovementType(tx.type),  // type → movement_type
           amount: tx.amount,
           note: tx.note || null,
-          category_id: tx.category_id,
-          transaction_at: tx.transaction_at,
+          occurred_at: tx.transaction_at,                 // transaction_at → occurred_at
+          // payment_method and category_id not on cash_movements
         })
         .eq('id', id)
         .eq('venue_id', VENUE_ID);

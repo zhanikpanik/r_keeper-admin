@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { VENUE_ID } from '@/lib/supabase';
+import { supabase, VENUE_ID } from '@/lib/supabase';
 
 export interface HourlyBucket {
   dayIndex: number;   // 0=пн … 6=вс
@@ -9,74 +9,54 @@ export interface HourlyBucket {
   avgCheck: number;
 }
 
-// Seeded PRNG
-function seededRandom(seed: number): number {
-  const s = (seed * 16807) % 2147483647;
-  return (s - 1) / 2147483646;
-}
+async function fetchHeatmap(start: string, end: string): Promise<HourlyBucket[]> {
+  const { data: orders, error } = await supabase
+    .from('orders')
+    .select('total_amount, opened_at')
+    .eq('venue_id', VENUE_ID)
+    .eq('status', 'paid')
+    .gte('opened_at', start)
+    .lt('opened_at', end);
 
-function generateMockHeatmap(): HourlyBucket[] {
+  if (error) throw error;
+  if (!orders || orders.length === 0) return [];
+
+  // Build heatmap: dayIndex × hour → aggregate
+  // Key: `${dayIndex}-${hour}`
+  const bucketMap = new Map<number, Map<number, { orderCount: number; revenue: number }>>();
+
+  for (const o of orders) {
+    const ts = new Date(o.opened_at as string);
+    let dayOfWeek = ts.getDay(); // 0=Sun..6=Sat
+    // Convert to 0=Mon..6=Sun
+    const dayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const hour = ts.getHours();
+
+    if (hour < 7 || hour > 23) continue;
+
+    if (!bucketMap.has(dayIndex)) bucketMap.set(dayIndex, new Map());
+    const hourMap = bucketMap.get(dayIndex)!;
+    const existing = hourMap.get(hour) || { orderCount: 0, revenue: 0 };
+    existing.orderCount += 1;
+    existing.revenue += Number(o.total_amount) || 0;
+    hourMap.set(hour, existing);
+  }
+
+  // Fill all 7 days × 17 hours (7–23), even empty ones
   const buckets: HourlyBucket[] = [];
-
-  // Base hourly pattern for a coffee shop (relative weights per hour)
-  const hourWeights: Record<number, number> = {
-    7: 0.2, 8: 0.7, 9: 1.0, 10: 0.8, 11: 0.5,
-    12: 0.9, 13: 1.0, 14: 0.6, 15: 0.3, 16: 0.3,
-    17: 0.6, 18: 0.7, 19: 0.5, 20: 0.3, 21: 0.15,
-    22: 0.08, 23: 0.03,
-  };
-
-  // Day multipliers (relative to Wednesday)
-  const dayMultipliers: Record<number, number> = {
-    0: 0.8,  // пн — quiet start of week
-    1: 0.85, // вт
-    2: 1.0,  // ср — baseline
-    3: 0.95, // чт
-    4: 1.4,  // пт — busy evening
-    5: 1.7,  // сб — busiest
-    6: 1.15, // вс — later start, moderate
-  };
-
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
     for (let hour = 7; hour <= 23; hour++) {
-      const seed = (dayIdx + 1) * 1000 + hour * 7;
-      const rand = (offset: number) => seededRandom(seed + offset * 31);
-
-      const baseOrders = 6; // orders per hour baseline (~37-87/day)
-      const weight = hourWeights[hour] ?? 0.1;
-      const dayMul = dayMultipliers[dayIdx];
-
-      // Weekend mornings start later
-      const morningPenalty = (dayIdx >= 5 && hour < 9) ? 0.4 : 1.0;
-      // Friday/Saturday evenings extend later
-      const eveningBonus = (dayIdx >= 4 && hour >= 18 && hour <= 21) ? 1.3 : 1.0;
-
-      const expectedOrders = baseOrders * weight * dayMul * morningPenalty * eveningBonus;
-      // Add some noise (±25%)
-      const noise = 0.75 + rand(0) * 0.5;
-      const orderCount = Math.max(0, Math.round(expectedOrders * noise));
-
-      if (orderCount === 0 && hour >= 22) continue; // skip empty late-night cells for cleaner look
-      if (orderCount === 0) {
-        buckets.push({
-          dayIndex: dayIdx,
-          hour,
-          orderCount: 0,
-          revenue: 0,
-          avgCheck: 0,
-        });
-        continue;
-      }
-
-      const avgCheck = 350 + Math.round(rand(1) * 150);
-      const revenue = orderCount * avgCheck;
+      const hourMap = bucketMap.get(dayIdx);
+      const entry = hourMap?.get(hour);
+      const orderCount = entry?.orderCount ?? 0;
+      const revenue = entry?.revenue ?? 0;
 
       buckets.push({
         dayIndex: dayIdx,
         hour,
         orderCount,
         revenue,
-        avgCheck: Math.round(revenue / orderCount),
+        avgCheck: orderCount > 0 ? Math.round(revenue / orderCount) : 0,
       });
     }
   }
@@ -84,10 +64,11 @@ function generateMockHeatmap(): HourlyBucket[] {
   return buckets;
 }
 
-export function useHeatmapData() {
+export function useHeatmapData(start: string, end: string) {
   return useQuery({
-    queryKey: ['heatmap', VENUE_ID],
-    queryFn: () => generateMockHeatmap(),
-    staleTime: 5 * 60 * 1000,
+    queryKey: ['heatmap', VENUE_ID, start, end],
+    queryFn: () => fetchHeatmap(start, end),
+    staleTime: 2 * 60 * 1000,
+    placeholderData: (prev: unknown) => prev as HourlyBucket[] | undefined,
   });
 }

@@ -80,11 +80,11 @@ async function fetchShifts(): Promise<CashShift[]> {
 
   const shiftIds = data.map((s: any) => s.id as string);
 
-  // Single journal fetch per venue + shifts (normalize type/payment in JS for POS / legacy)
+  // Single journal fetch per venue + shifts (normalize movement_type in JS for POS / legacy)
   const { data: cashTxRows } = shiftIds.length > 0
     ? await supabase
-        .from('cash_transactions')
-        .select('shift_id, type, payment_method, amount')
+        .from('cash_movements')
+        .select('shift_id, movement_type, amount')
         .eq('venue_id', VENUE_ID)
         .in('shift_id', shiftIds)
     : { data: [] };
@@ -95,8 +95,9 @@ async function fetchShifts(): Promise<CashShift[]> {
     const sid = parseCashTxShiftId((tx as { shift_id?: unknown }).shift_id);
     if (!sid) continue;
     const sidKey = sid.toLowerCase();
-    const pm = parseCashTxPaymentMethod((tx as { payment_method?: unknown }).payment_method);
-    const typ = parseCashTxType((tx as { type?: unknown }).type);
+    // cash_movements has no payment_method — all movements affect cash drawer
+    const pm = 'cash';
+    const typ = parseCashTxType((tx as { movement_type?: unknown }).movement_type);
     const amt = parseCashTxAmount((tx as { amount?: unknown }).amount);
     if (typ === 'collection' && pm === 'cash') {
       collectionByShift[sidKey] = (collectionByShift[sidKey] || 0) + amt;

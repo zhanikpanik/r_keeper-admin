@@ -29,6 +29,9 @@ export interface Alert {
   actionHref: string | null;
 }
 
+/** Тип события в хронологии — для выбора иконки */
+export type ChronologyEventType = 'shift_open' | 'expense' | 'delivery' | 'write_off';
+
 /** Одно событие в хронологии дня */
 export interface ChronologyEvent {
   id: string;
@@ -40,6 +43,8 @@ export interface ChronologyEvent {
   /** Если событие требует действия менеджера — кнопка */
   actionLabel: string | null;
   actionHref: string | null;
+  /** Тип события (для выбора иконки) */
+  type?: ChronologyEventType;
 }
 
 /** Ингредиент под угрозой — с привязкой к блюдам */
@@ -70,6 +75,19 @@ export interface YesterdaySummary {
   status: 'normal' | 'dayoff' | 'unavailable';
 }
 
+export interface TopDish {
+  name: string;
+  qty: number;
+  revenue: number;
+}
+
+export interface OperationalResult {
+  revenue: number;
+  expenses: number;
+  writeOffs: number;
+  net: number;
+}
+
 export interface DashboardData {
   metrics: Metric[];
   alerts: Alert[];
@@ -77,4 +95,6 @@ export interface DashboardData {
   warehouseThreats: WarehouseThreat[];
   shiftStatus: ShiftAlertStatus;
   yesterday: YesterdaySummary;
+  topDishes: TopDish[];
+  operationalResult: OperationalResult;
 }

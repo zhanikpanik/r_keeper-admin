@@ -1,44 +1,77 @@
 import { useQuery } from '@tanstack/react-query';
-import { VENUE_ID } from '@/lib/supabase';
+import { supabase, VENUE_ID } from '@/lib/supabase';
 
 export interface TopItem {
   name: string;
-  value: number;     // revenue for dishes, consumption for ingredients
+  value: number;      // revenue for dishes, consumption for ingredients
   secondary: number;  // order count for dishes, stock remaining for ingredients
 }
 
-const MOCK_DISHES: TopItem[] = [
-  { name: 'Капучино',         value: 68_400, secondary: 182 },
-  { name: 'Латте',            value: 62_100, secondary: 165 },
-  { name: 'Американо',        value: 48_200, secondary: 148 },
-  { name: 'Раф',              value: 44_800, secondary: 98  },
-  { name: 'Эспрессо',         value: 32_500, secondary: 142 },
-  { name: 'Круассан',         value: 28_300, secondary: 89  },
-  { name: 'Флэт Уайт',        value: 25_600, secondary: 72  },
-  { name: 'Сэндвич с курицей', value: 22_100, secondary: 54  },
-  { name: 'Мокачино',         value: 18_900, secondary: 48  },
-  { name: 'Чизкейк',          value: 17_400, secondary: 42  },
-  { name: 'Какао',            value: 12_800, secondary: 36  },
-  { name: 'Брауни',           value: 10_500, secondary: 30  },
-];
+async function fetchTopItems(start: string, end: string) {
+  // 1. Get order IDs in period
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('venue_id', VENUE_ID)
+    .eq('status', 'paid')
+    .gte('opened_at', start)
+    .lt('opened_at', end);
 
-const MOCK_INGREDIENTS: TopItem[] = [
-  { name: 'Молоко 3.2%',      value: 380, secondary: 45  },
-  { name: 'Кофе в зёрнах',    value: 340, secondary: 12  },
-  { name: 'Сливки 33%',       value: 180, secondary: 8   },
-  { name: 'Сахар',            value: 160, secondary: 25  },
-  { name: 'Мука пшеничная',   value: 95,  secondary: 40  },
-  { name: 'Сироп карамельный', value: 72,  secondary: 5   },
-  { name: 'Яйца',             value: 68,  secondary: 120 },
-  { name: 'Масло сливочное',  value: 55,  secondary: 3   },
-  { name: 'Шоколад тёмный',   value: 42,  secondary: 6   },
-  { name: 'Сироп ванильный',  value: 38,  secondary: 4   },
-];
+  const orderIds = (orders || []).map((o) => o.id);
 
-export function useTopItems() {
+  // 2. Top dishes from order_items
+  let dishes: TopItem[] = [];
+  if (orderIds.length > 0) {
+    const { data: items } = await supabase
+      .from('order_items')
+      .select('product_name, quantity, product_price')
+      .in('order_id', orderIds);
+
+    const dishMap = new Map<string, { qty: number; revenue: number }>();
+    for (const item of items || []) {
+      const name = item.product_name as string;
+      const qty = Number(item.quantity) || 1;
+      const price = Number(item.product_price) || 0;
+      const existing = dishMap.get(name) || { qty: 0, revenue: 0 };
+      existing.qty += qty;
+      existing.revenue += qty * price;
+      dishMap.set(name, existing);
+    }
+
+    dishes = Array.from(dishMap.entries())
+      .map(([name, { qty, revenue }]) => ({
+        name,
+        value: revenue,
+        secondary: qty,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 12);
+  }
+
+  // 3. Top ingredients (by current stock — not period-dependent)
+  // Show ingredients with lowest stock as "top" by consumption urgency
+  const { data: lowStock } = await supabase
+    .from('products')
+    .select('name, stock_quantity')
+    .eq('venue_id', VENUE_ID)
+    .eq('type', 'ingredient')
+    .order('stock_quantity')
+    .limit(10);
+
+  const ingredients: TopItem[] = (lowStock || []).map((p) => ({
+    name: p.name as string,
+    value: Number(p.stock_quantity) || 0,       // stock remaining (lower = more urgent)
+    secondary: 0,
+  }));
+
+  return { dishes, ingredients };
+}
+
+export function useTopItems(start: string, end: string) {
   return useQuery({
-    queryKey: ['top_items', VENUE_ID],
-    queryFn: () => ({ dishes: MOCK_DISHES, ingredients: MOCK_INGREDIENTS }),
-    staleTime: 5 * 60 * 1000,
+    queryKey: ['top_items', VENUE_ID, start, end],
+    queryFn: () => fetchTopItems(start, end),
+    staleTime: 2 * 60 * 1000,
+    placeholderData: (prev: unknown) => prev as { dishes: TopItem[]; ingredients: TopItem[] } | undefined,
   });
 }

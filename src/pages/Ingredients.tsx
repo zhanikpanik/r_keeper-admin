@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Pencil, X } from 'lucide-react';
 import { supabase, VENUE_ID } from '@/lib/supabase';
 import { somRounded } from '@/lib/formatSom';
-import { DeleteButton } from '@/components/ui/DeleteButton';
 import { SearchInput } from '@/components/ui/SearchInput'
 import { AddButton } from '@/components/ui/ActionButtons';
 import {
@@ -10,6 +10,9 @@ import {
  useIngredients,
  useIngredientUsageMap,
 } from '@/hooks/useMenuData';
+
+const ROW_ACTION =
+  'opacity-60 group-hover:opacity-100 transition-opacity p-1 cursor-pointer rounded hover:bg-muted/50';
 
 export function Ingredients() {
  const navigate = useNavigate();
@@ -38,9 +41,9 @@ export function Ingredients() {
  }
 
  const getStockStatus = (qty: number) => {
-  if (qty <= 0) return { color: 'bg-red-500', label: 'Закончился' };
-  if (qty < 5) return { color: 'bg-amber-500', label: 'Мало' };
-  return { color: 'bg-green-500', label: 'В норме' };
+  if (qty <= 0) return { color: 'bg-red-500', label: 'Закончился', border: 'border-l-red-500' };
+  if (qty < 5) return { color: 'bg-amber-500', label: 'Мало', border: 'border-l-amber-500' };
+  return { color: 'bg-green-500', label: 'В норме', border: '' };
  };
 
  return (
@@ -62,7 +65,7 @@ export function Ingredients() {
     <AddButton onClick={() => navigate('/menu/ingredients/add')} />
    </div>
 
-   <table className="w-full table-fixed border-separate border-spacing-0">
+   <table className="table-fixed border-separate border-spacing-0">
     <thead>
      <tr className="text-sm font-semibold text-foreground">
       <th scope="col" className="w-[40px] py-3 px-3" />
@@ -79,40 +82,61 @@ export function Ingredients() {
      {ingredientsPending && <tr><td colSpan={8} className="py-12 text-center text-sm">Загрузка…</td></tr>}
      {ingredientsError && <tr><td colSpan={8} className="py-12 text-center text-sm text-destructive">{ingredientsErr instanceof Error ? ingredientsErr.message : 'Не удалось загрузить'}</td></tr>}
      {!ingredientsPending && !ingredientsError && filtered.length === 0 && (
-      <tr><td colSpan={8} className="py-12 text-center text-sm">{search ? 'Ничего не найдено' : 'Нет ингредиентов. Нажмите "+ Добавить"'}</td></tr>
+      <tr><td colSpan={8} className="py-16 text-center">
+       <p className="text-sm font-medium mb-1">
+        {search ? 'Ничего не найдено' : 'Ингредиентов пока нет'}
+       </p>
+       <p className="text-xs text-muted-foreground mb-4">
+        {search ? 'Попробуйте изменить поисковый запрос' : 'Добавьте ингредиенты, чтобы начать составлять блюда и отслеживать остатки'}
+       </p>
+       {!search && (
+        <button onClick={() => navigate('/menu/ingredients/add')} className="text-sm text-primary hover:underline">
+          Добавить ингредиент →
+        </button>
+       )}
+      </td></tr>
      )}
      {!ingredientsPending && !ingredientsError && filtered.map((item) => {
       const dishes = usageMap[item.id] || [];
       const hasWarehouses = item.warehouse_breakdown.length > 0;
       const status = getStockStatus(item.stock_quantity);
       const canExpand = dishes.length > 0 || hasWarehouses;
+      const isExpanded = expandedId === item.id;
       return (
        <>
         <tr
          key={item.id}
-         className={`group cursor-pointer ${expandedId === item.id ? 'bg-[#EFF0F4]' : 'hover:bg-muted/30'} transition-colors`}
-         onClick={canExpand ? () => setExpandedId(expandedId === item.id ? null : item.id) : undefined}
-         tabIndex={0}
-         onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && canExpand) { e.preventDefault(); setExpandedId(expandedId === item.id ? null : item.id); } }}
+         className={`group cursor-pointer border-l-3 transition-colors
+           ${isExpanded ? 'bg-[#EFF0F4]' : 'hover:bg-muted/30'}
+           ${item.stock_quantity <= 0 ? 'border-l-red-500 bg-red-50/20' : item.stock_quantity < 5 ? 'border-l-amber-500 bg-amber-50/10' : 'border-l-transparent'}`}
+         onClick={canExpand ? () => setExpandedId(isExpanded ? null : item.id) : undefined}
+         tabIndex={canExpand ? 0 : -1}
+         onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && canExpand) { e.preventDefault(); setExpandedId(isExpanded ? null : item.id); } }}
         >
          <td className="py-2 px-3 text-center"><div className={`w-2 h-2 rounded-full ${status.color} mx-auto`} title={status.label} /></td>
          <td className="py-2 px-3 text-sm truncate">{item.name}</td>
          <td className="py-2 px-3 text-sm truncate">{item.workshop_name || '—'}</td>
-         <td className={`py-2 px-3 text-sm text-right tabular-nums ${item.stock_quantity <= 0 ? 'text-red-600' : ''}`}>{item.stock_quantity} {item.unit}</td>
+         <td className={`py-2 px-3 text-sm text-right tabular-nums ${item.stock_quantity <= 0 ? 'text-red-600 font-semibold' : ''}`}>{item.stock_quantity} {item.unit}</td>
          <td className="py-2 px-3 text-sm text-right tabular-nums">{somRounded(item.price)} сом</td>
          <td className="py-2 px-3 text-sm text-right tabular-nums text-foreground">{somRounded(item.stock_quantity * item.price)} сом</td>
-         <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/menu/ingredients/${item.id}`); }} className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer">Изменить</button>
+         <td className={`py-2 px-3 ${ROW_ACTION}`}>
+          <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/menu/ingredients/${item.id}`); }} title="Редактировать">
+           <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+          </button>
          </td>
-         <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity"><DeleteButton onClick={() => handleDelete(item.id)} /></td>
+         <td className={`py-2 px-3 ${ROW_ACTION}`}>
+          <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} title="Удалить">
+           <X className="w-4 h-4 text-muted-foreground hover:text-red-600" />
+          </button>
+         </td>
         </tr>
-        {expandedId === item.id && canExpand && (
-         <tr key={`${item.id}-detail`} className="bg-[#EFF0F4]">
+        {isExpanded && canExpand && (
+         <tr key={`${item.id}-detail`} className={`bg-[#EFF0F4] ${item.stock_quantity <= 0 ? 'border-l-red-500' : item.stock_quantity < 5 ? 'border-l-amber-500' : ''}`}>
           <td colSpan={8} className="pb-4 pt-0 pl-6">
            <div className="max-w-xs space-y-3">
             {item.warehouse_breakdown.length > 0 && (
              <div className="space-y-0.5">
-              <p className="text-sm">По складам</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">По складам</p>
               {item.warehouse_breakdown.map((w) => (
                <div key={w.warehouse_id} className="text-sm py-0.5 flex justify-between gap-4"><span>{w.warehouse_name}</span><span className="tabular-nums">{w.quantity} {item.unit}</span></div>
               ))}
@@ -120,7 +144,7 @@ export function Ingredients() {
             )}
             {dishes.length > 0 && (
              <div className="space-y-0.5">
-              <p className="text-sm">Используется в блюдах</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Используется в блюдах</p>
               {dishes.map((dish) => <div key={dish.id} className="text-sm py-0.5">{dish.name}</div>)}
              </div>
             )}

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import crossIcon from '@/assets/icons/cross.svg';
-import searchIcon from '@/assets/icons/search.svg';
+import { Search, X, Pencil } from 'lucide-react';
 import { supabase, VENUE_ID } from '@/lib/supabase';
 import { somRounded } from '@/lib/formatSom';
 import {
@@ -197,14 +196,14 @@ export function Menu() {
       {/* Filters row */}
       <div className="flex items-center gap-2 mb-4">
         <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-56 bg-secondary/30">
-          <img src={searchIcon} className="w-3.5 h-3.5 opacity-40" />
+          <Search className="w-3.5 h-3.5 opacity-40" />
           <input className="bg-transparent text-sm outline-none flex-1" placeholder="Быстрый поиск" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <button onClick={() => navigate('/menu/dish/new')} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-50">+ Добавить</button>
       </div>
 
       {/* Table */}
-      <table className="w-full table-fixed border-separate border-spacing-0">
+      <table className="table-fixed border-separate border-spacing-0">
         <thead>
           <tr className="text-sm font-semibold text-foreground">
             <th scope="col" className="w-[40px] py-3 px-3" />
@@ -222,8 +221,18 @@ export function Menu() {
           {menuPending && <tr><td colSpan={9} className="py-12 text-center text-sm text-muted-foreground">Загрузка…</td></tr>}
           {menuError && <tr><td colSpan={9} className="py-12 text-center text-sm text-destructive">{menuErrorMessage}</td></tr>}
           {!menuPending && !menuError && filteredProducts.length === 0 && (
-            <tr><td colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
-              {search.trim() ? 'Ничего не найдено' : selectedCategory ? 'Нет блюд в этой категории' : 'Нет блюд'}
+            <tr><td colSpan={9} className="py-16 text-center">
+              <p className="text-sm font-medium mb-1">
+                {search.trim() ? 'Ничего не найдено' : selectedCategory ? 'Нет блюд в этой категории' : 'Блюд пока нет'}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                {search.trim() ? 'Попробуйте изменить поисковый запрос' : 'Добавьте первое блюдо, чтобы начать составлять меню'}
+              </p>
+              {!search.trim() && (
+                <button onClick={() => navigate('/menu/dish/new')} className="text-sm text-primary hover:underline">
+                  Добавить блюдо →
+                </button>
+              )}
             </td></tr>
           )}
           {!menuPending && !menuError && filteredProducts.map((product) => {
@@ -254,11 +263,11 @@ export function Menu() {
                       </button>
                     ) : <span className="text-muted-foreground opacity-30">Без рецепта</span>}
                   </td>
-                  <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/menu/dish/${product.id}`); }} className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer">Изменить</button>
+                  <td className="py-2 px-3 opacity-60 group-hover:opacity-100 transition-opacity rounded hover:bg-muted/50">
+                    <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/menu/dish/${product.id}`); }} className="p-1 cursor-pointer" title="Редактировать"><Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" /></button>
                   </td>
-                  <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteProduct(product.id); }} className="p-1 text-red-500"><img src={crossIcon} className="w-4 h-4" alt="" /></button>
+                  <td className="py-2 px-3 opacity-60 group-hover:opacity-100 transition-opacity rounded hover:bg-muted/50">
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteProduct(product.id); }} className="p-1 cursor-pointer" title="Удалить"><X className="w-4 h-4 text-muted-foreground hover:text-red-600" /></button>
                   </td>
                 </tr>
                 {expandedRecipe === product.id && canExpand && (

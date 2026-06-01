@@ -23,7 +23,7 @@ const levelConfig = {
 export function WarehouseThreats({ threats, loaded = true }: WarehouseThreatsProps) {
   return (
     <div>
-      <h3 className="text-base font-semibold text-foreground mb-3">Склад под угрозой</h3>
+      <h2 className="text-base font-semibold text-foreground mb-3">Склад под угрозой</h2>
 
       {threats.length === 0 ? (
         loaded === false ? (

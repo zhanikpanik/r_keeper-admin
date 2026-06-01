@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, AlertOctagon, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AlertCardProps {
@@ -16,11 +16,13 @@ const config = {
     bg: 'bg-destructive/5',
     border: 'border-destructive',
     icon: 'text-destructive',
+    IconComponent: AlertOctagon,
   },
   warning: {
     bg: 'bg-amber-50',
     border: 'border-amber-500',
     icon: 'text-amber-600',
+    IconComponent: AlertTriangle,
   },
 };
 
@@ -37,7 +39,7 @@ export function AlertCard({ type, message, actionLabel, actionHref, onDismiss }:
         c.border, c.bg,
       )}
     >
-      <AlertTriangle className={cn('w-4 h-4 shrink-0', c.icon)} />
+      <c.IconComponent className={cn('w-4 h-4 shrink-0', c.icon)} />
 
       <span className="text-sm text-foreground flex-1 min-w-0 truncate">
         {message}

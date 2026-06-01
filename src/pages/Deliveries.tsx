@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { PackageCheck, RotateCcw, Truck } from 'lucide-react';
-import crossIcon from '@/assets/icons/cross.svg';
-import searchIcon from '@/assets/icons/search.svg';
+import { PackageCheck, Pencil, RotateCcw, Search, Truck, X } from 'lucide-react';
 import {
   useWarehouseDeliveries,
   useReceiveDelivery,
@@ -13,11 +11,12 @@ import {
   type DeliveryUiStatus,
 } from '@/hooks/useWarehouse';
 
-/** Same layout pattern as Menu: grid + subgrid; `auto` = actions width from content; last = 32px for ✕ */
-const DELIVERY_GRID_TEMPLATE = '100px 140px 120px 7rem 100px 100px auto 32px';
-
-const DELIVERY_ACTION_CLASS =
-  'inline-flex cursor-pointer items-center justify-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium text-[#5D4FF1] hover:text-[#4538c4] hover:bg-[#5D4FF1]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+/** Unified action button used across all warehouse tables */
+const ACTION_BTN =
+  'inline-flex cursor-pointer items-center justify-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+const ACTION_PRIMARY = `${ACTION_BTN} text-[#5D4FF1] hover:text-[#4538c4] hover:bg-[#5D4FF1]/10`;
+const ROW_ACTION =
+  'opacity-60 group-hover:opacity-100 transition-opacity p-1 cursor-pointer rounded hover:bg-muted/50';
 
 function getPositionPlural(count: number) {
   const n = Math.abs(count) % 100;
@@ -48,7 +47,7 @@ export function Deliveries() {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const { data: deliveries = [], isLoading, isError, error } = useWarehouseDeliveries();
+  const { data: deliveries = [], isLoading, isError, error: loadError } = useWarehouseDeliveries();
   const receiveDelivery = useReceiveDelivery();
   const cancelDelivery = useCancelDelivery();
   const restoreDelivery = useRestoreDelivery();
@@ -77,14 +76,13 @@ export function Deliveries() {
 
       {isError && (
         <p className="text-sm text-destructive mb-4">
-          {(error as Error)?.message}. Примените миграцию{' '}
-          <code className="text-xs">supabase/migrations/20260430120000_admin_warehouse.sql</code>.
+          {(loadError as Error)?.message}
         </p>
       )}
 
       <div className="flex items-center gap-2 mb-4">
         <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-64 bg-secondary/30">
-          <img src={searchIcon} className="w-3.5 h-3.5 opacity-40" alt="" />
+          <Search className="w-3.5 h-3.5 opacity-40" />
           <input
             className="bg-transparent text-sm outline-none flex-1"
             placeholder="Поставщик или позиция…"
@@ -102,7 +100,7 @@ export function Deliveries() {
 
       {isLoading && <p className="text-sm text-muted-foreground py-4">Загрузка…</p>}
 
-      <table className="w-full table-fixed border-separate border-spacing-0">
+      <table className="table-fixed border-separate border-spacing-0">
         <thead>
           <tr className="text-sm font-semibold text-foreground">
             <th scope="col" className="text-left py-3 px-3 w-[100px]">Дата</th>
@@ -112,7 +110,8 @@ export function Deliveries() {
             <th scope="col" className="text-center py-3 px-3 w-[100px]">Статус</th>
             <th scope="col" className="text-right py-3 px-3 w-[100px]">Сумма</th>
             <th scope="col" className="py-3 px-3" />
-            <th scope="col" className="w-[32px]" />
+            <th scope="col" className="w-[80px]" />
+            <th scope="col" className="w-[36px]" />
           </tr>
         </thead>
         <tbody>
@@ -121,18 +120,21 @@ export function Deliveries() {
             const editUrl = `/warehouse/deliveries/${delivery.id}/edit`;
             const n = delivery.items.length;
             const canExpand = n > 0;
+            const isExpanded = expandedId === delivery.id;
 
             return (
               <>
               <tr
                 key={delivery.id}
-                className={`group cursor-pointer ${expandedId === delivery.id ? 'bg-[#EFF0F4]' : 'hover:bg-[#EFF0F4]'} transition-colors even:bg-muted/10 ${isCancelled ? 'opacity-50' : ''}`}
-                onClick={() => navigate(editUrl)}
-                tabIndex={0}
+                className={`group cursor-pointer transition-colors
+                  ${isExpanded ? 'bg-[#EFF0F4]' : 'hover:bg-muted/30'}
+                  ${isCancelled ? 'opacity-50' : ''}`}
+                onClick={canExpand ? () => setExpandedId(isExpanded ? null : delivery.id) : undefined}
+                tabIndex={canExpand ? 0 : -1}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if ((e.key === 'Enter' || e.key === ' ') && canExpand) {
                     e.preventDefault();
-                    navigate(editUrl);
+                    setExpandedId(isExpanded ? null : delivery.id);
                   }
                 }}
               >
@@ -147,9 +149,9 @@ export function Deliveries() {
                 </td>
                 <td className="py-2 px-3 text-sm">
                   {canExpand ? (
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setExpandedId(expandedId === delivery.id ? null : delivery.id); }} className="text-sm font-medium text-primary hover:text-primary/70 transition-colors cursor-pointer">
+                    <span className="text-sm font-medium">
                       {`${n} ${getPositionPlural(n)}`}
-                    </button>
+                    </span>
                   ) : (
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
@@ -160,38 +162,43 @@ export function Deliveries() {
                   </span>
                 </td>
                 <td className={`py-2 px-3 text-sm text-right tabular-nums font-medium text-foreground ${isCancelled ? 'line-through' : ''}`}>
-                  {delivery.amount.toLocaleString()}
+                  {delivery.amount.toLocaleString()} сом
                 </td>
                 <td className="py-2 px-3">
                   <div className="flex flex-wrap gap-1 justify-end">
                     {delivery.status === 'Черновик' && (
-                      <button type="button" onClick={(e) => { e.stopPropagation(); sendTransit.mutate(delivery.id); }} disabled={sendTransit.isPending} className={DELIVERY_ACTION_CLASS}>
-                        <Truck className="w-4 h-4 shrink-0" aria-hidden />В путь
+                      <button type="button" onClick={(e) => { e.stopPropagation(); sendTransit.mutate(delivery.id); }} disabled={sendTransit.isPending} className={ACTION_PRIMARY}>
+                        <Truck className="w-3.5 h-3.5 shrink-0" />В путь
                       </button>
                     )}
                     {delivery.status === 'В пути' && (
-                      <button type="button" onClick={(e) => { e.stopPropagation(); receiveDelivery.mutate(delivery.id); }} disabled={receiveDelivery.isPending} className={DELIVERY_ACTION_CLASS}>
-                        <PackageCheck className="w-4 h-4 shrink-0" aria-hidden />Принять
+                      <button type="button" onClick={(e) => { e.stopPropagation(); receiveDelivery.mutate(delivery.id); }} disabled={receiveDelivery.isPending} className={ACTION_PRIMARY}>
+                        <PackageCheck className="w-3.5 h-3.5 shrink-0" />Принять
                       </button>
                     )}
                     {isCancelled && (
-                      <button type="button" onClick={(e) => { e.stopPropagation(); restoreDelivery.mutate(delivery.id); }} disabled={restoreDelivery.isPending} className={DELIVERY_ACTION_CLASS}>
-                        <RotateCcw className="w-4 h-4 shrink-0" aria-hidden />Восстановить
+                      <button type="button" onClick={(e) => { e.stopPropagation(); restoreDelivery.mutate(delivery.id); }} disabled={restoreDelivery.isPending} className={ACTION_PRIMARY}>
+                        <RotateCcw className="w-3.5 h-3.5 shrink-0" />Восстановить
                       </button>
                     )}
                   </div>
                 </td>
-                <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                <td className={`py-2 px-3 ${ROW_ACTION}`}>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); navigate(editUrl); }} title="Редактировать">
+                    <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                  </button>
+                </td>
+                <td className={`py-2 px-3 ${ROW_ACTION}`}>
                   {!isCancelled && (
-                    <button type="button" className="p-1 text-red-500 opacity-40 hover:opacity-100" onClick={(e) => { e.stopPropagation(); cancelDelivery.mutate(delivery.id); }} title="Отменить">
-                      <img src={crossIcon} className="w-4 h-4" alt="" />
+                    <button type="button" onClick={(e) => { e.stopPropagation(); cancelDelivery.mutate(delivery.id); }} title="Отменить">
+                      <X className="w-4 h-4 text-muted-foreground hover:text-red-600" />
                     </button>
                   )}
                 </td>
               </tr>
-              {expandedId === delivery.id && canExpand && (
+              {isExpanded && canExpand && (
                 <tr key={`${delivery.id}-detail`} className="bg-[#EFF0F4]">
-                  <td colSpan={8} className="pb-2 pt-0 pl-10">
+                  <td colSpan={9} className="pb-2 pt-0 pl-10">
                     <div className="max-w-sm space-y-0.5">
                       {delivery.items.map((item) => (
                         <div key={item.id} className="text-sm py-0.5 pl-3 text-muted-foreground">
@@ -209,8 +216,18 @@ export function Deliveries() {
             );
           })}
           {!isLoading && filteredDeliveries.length === 0 && (
-            <tr><td colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
-              {search ? 'Ничего не найдено' : 'Нет поставок. Нажмите «+ Добавить»'}
+            <tr><td colSpan={9} className="py-16 text-center">
+              <p className="text-sm font-medium mb-1">
+                {search ? 'Ничего не найдено' : 'Поставок пока нет'}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                {search ? 'Попробуйте изменить поисковый запрос' : 'Создайте первую поставку, чтобы начать учёт товаров на складе'}
+              </p>
+              {!search && (
+                <Link to="/warehouse/deliveries/new" className="text-sm text-primary hover:underline">
+                  Создать поставку →
+                </Link>
+              )}
             </td></tr>
           )}
         </tbody>

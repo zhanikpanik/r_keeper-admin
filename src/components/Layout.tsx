@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { MoreHorizontal } from 'lucide-react';
+import { Menu, MoreHorizontal } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { REQUIRE_AUTH } from '@/lib/supabase';
 import { useAuth } from '@/auth/useAuth';
@@ -17,6 +17,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
  { to: '/', label: 'Дашборд' },
+ { to: '/analytics', label: 'Аналитика' },
  {
   to: '/finances', label: 'Финансы',
   children: [
@@ -62,7 +63,13 @@ export function Layout() {
  const deleteWarehouse = useDeleteWarehouse();
  const { data: activeShift } = useActiveShift();
  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+ const [sidebarOpen, setSidebarOpen] = useState(false);
  const menuRef = useRef<HTMLDivElement>(null);
+
+ // Auto-close sidebar on navigation (mobile)
+ useEffect(() => {
+  setSidebarOpen(false);
+ }, [location.pathname]);
 
  // Close warehouse context menu on outside click
  useEffect(() => {
@@ -123,8 +130,22 @@ export function Layout() {
 
  return (
   <div className="flex h-screen bg-background">
+   {/* Mobile overlay */}
+   {sidebarOpen && (
+    <div
+     className="fixed inset-0 z-30 bg-black/30 md:hidden"
+     onClick={() => setSidebarOpen(false)}
+    />
+   )}
+
    {/* Sidebar — Notion-style */}
-   <aside className="w-60 bg-[#F9F8F7] border-r border-border flex flex-col select-none">
+   <aside
+    className={cn(
+     'fixed inset-y-0 left-0 z-40 w-60 bg-[#F9F8F7] border-r border-border flex flex-col select-none transition-transform duration-200',
+     'md:static md:translate-x-0',
+     sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+    )}
+   >
     <div className="px-3 pt-3 pb-2">
      <h1 className="text-sm font-semibold px-2 py-1">r_keeper</h1>
     </div>
@@ -287,6 +308,15 @@ export function Layout() {
 
    {/* Main content */}
    <main className="flex-1 overflow-y-auto">
+    {/* Mobile hamburger */}
+    <button
+     type="button"
+     onClick={() => setSidebarOpen(true)}
+     className="md:hidden fixed top-3 left-3 z-50 p-2 rounded-md bg-background border border-border shadow-sm hover:bg-muted transition-colors"
+     aria-label="Открыть меню"
+    >
+     <Menu className="w-5 h-5" />
+    </button>
     <Outlet />
    </main>
   </div>

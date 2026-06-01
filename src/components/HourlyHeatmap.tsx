@@ -1,5 +1,9 @@
 import ReactECharts from 'echarts-for-react';
 import type { HourlyBucket } from '@/hooks/useHeatmapData';
+import {
+  CHART_DARK, CHART_MUTED, CHART_FONT, CHART_FONT_SIZE_SM,
+  TOOLTIP_STYLE, HEATMAP_COLORS,
+} from '@/lib/chartTheme';
 
 const DAY_LABELS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
 const DAY_LABELS_FULL = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -17,26 +21,31 @@ interface Props {
 export function HourlyHeatmap({ data, isPending }: Props) {
   if (isPending) {
     return (
-      <div className="h-72 flex items-center justify-center text-[13px] text-[#37352f]">
-        Загрузка тепловой карты…
+      <div className="bg-card rounded-xl p-4">
+        <div className="h-4 bg-muted rounded w-44 mb-3 animate-pulse" />
+        <div className="h-[260px] bg-muted rounded animate-pulse" />
       </div>
     );
   }
 
   if (data.length === 0) {
     return (
-      <div className="h-72 flex items-center justify-center text-[13px] text-[#37352f]">
-        Нет данных по часам
+      <div className="bg-card rounded-xl p-4">
+        <h3 className="text-base font-semibold text-foreground mb-3">Загруженность по часам</h3>
+        <div className="h-[260px] flex flex-col items-center justify-center text-muted-foreground gap-2">
+          <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+          <span className="text-sm">Нет данных за выбранный период</span>
+        </div>
       </div>
     );
   }
 
-  // Build heatmap series data: [dayIndex, hourIndex, orderCount]
   const heatmapData = data
     .filter((d) => d.hour >= 7 && d.hour <= 23 && d.dayIndex >= 0 && d.dayIndex <= 6)
     .map((d) => [d.dayIndex, d.hour - 7, d.orderCount]);
 
-  // Daily totals for summary row
   const dailyTotals = Array.from({ length: 7 }, (_, dayIdx) =>
     data
       .filter((d) => d.dayIndex === dayIdx)
@@ -47,10 +56,7 @@ export function HourlyHeatmap({ data, isPending }: Props) {
 
   const option = {
     tooltip: {
-      backgroundColor: '#fff',
-      borderColor: '#e5e7eb',
-      borderWidth: 1,
-      textStyle: { color: '#1e293b', fontSize: 13, fontFamily: 'system-ui, sans-serif' },
+      ...TOOLTIP_STYLE,
       formatter: (params: { data: number[] }) => {
         const [dayIdx, hourIdx] = params.data;
         const hour = hourIdx + 7;
@@ -61,15 +67,15 @@ export function HourlyHeatmap({ data, isPending }: Props) {
           <div style="font-weight:600;margin-bottom:4px">${DAY_LABELS_FULL[dayIdx]} ${timeLabel}</div>
           <div>Заказов: <b>${cell.orderCount}</b></div>
           <div>Выручка: <b>${formatSom(cell.revenue)} сом</b></div>
-          <div style="color:#37352f">Средний чек: ${formatSom(cell.avgCheck)} сом</div>
+          <div style="color:${CHART_MUTED}">Средний чек: ${formatSom(cell.avgCheck)} сом</div>
         `;
       },
     },
     grid: {
       top: 4,
       right: 4,
-      bottom: 36,
-      left: 42,
+      bottom: 4,
+      left: 44,
     },
     xAxis: {
       type: 'category',
@@ -78,13 +84,12 @@ export function HourlyHeatmap({ data, isPending }: Props) {
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: '#6b7280',
-        fontSize: 11,
-        fontFamily: 'system-ui, sans-serif',
-        fontWeight: 500,
-        margin: 4,
+        color: CHART_MUTED,
+        fontSize: CHART_FONT_SIZE_SM,
+        fontFamily: CHART_FONT,
+        fontWeight: 600,
+        margin: 6,
       },
-      splitArea: { show: true },
     },
     yAxis: {
       type: 'category',
@@ -93,77 +98,63 @@ export function HourlyHeatmap({ data, isPending }: Props) {
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: '#37352f',
+        color: CHART_MUTED,
         fontSize: 10,
-        fontFamily: 'system-ui, sans-serif',
+        fontFamily: CHART_FONT,
         margin: 4,
       },
-      splitArea: { show: true },
     },
     visualMap: {
+      show: false, // hide bottom scale — colors speak for themselves
       min: 0,
       max: maxOrders,
-      calculable: false,
-      orient: 'horizontal',
-      left: 'center',
-      bottom: 2,
-      itemWidth: 10,
-      itemHeight: 140,
-      text: ['много', 'пусто'],
-      textStyle: { color: '#37352f', fontSize: 11 },
       inRange: {
-        color: ['#f8fafc', '#fef9c3', '#fdba74', '#f97316', '#ef4444'],
-      },
-      outOfRange: {
-        color: ['#f1f5f9'],
+        color: HEATMAP_COLORS,
       },
     },
     series: [
       {
         type: 'heatmap',
         data: heatmapData,
-        label: {
-          show: false,
-        },
+        label: { show: false },
         emphasis: {
           itemStyle: {
             shadowBlur: 8,
-            shadowColor: 'rgba(0, 0, 0, 0.2)',
-            borderColor: '#1e293b',
+            shadowColor: 'rgba(0, 0, 0, 0.15)',
+            borderColor: CHART_DARK,
             borderWidth: 1.5,
           },
         },
         itemStyle: {
           borderColor: '#fff',
           borderWidth: 2,
-          borderRadius: 2,
+          borderRadius: 3,
         },
       },
     ],
   };
 
   return (
-    <div>
+    <div className="bg-card rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-semibold text-[#37352f]">
+        <h3 className="text-base font-semibold text-foreground">
           Загруженность по часам
         </h3>
-        <span className="text-[13px] text-[#37352f]">май 2026 · среднее за 4 недели</span>
       </div>
 
       <ReactECharts option={option} style={{ height: 260 }} notMerge />
 
       {/* Daily totals row */}
-      <div className="flex gap-0 mt-2 ml-[42px] mr-[4px]">
+      <div className="flex gap-0 mt-2 ml-[44px] mr-[4px]">
         {dailyTotals.map((total, i) => (
           <div
             key={i}
-            className="flex-1 text-center py-1 border-t border-[#f0efed]"
+            className="flex-1 text-center py-1 border-t border-border/40"
           >
-            <div className="text-[13px] text-[#37352f]">
+            <div className="text-sm font-semibold text-foreground tabular-nums">
               {total}
             </div>
-            <div className="text-[11px] text-[#37352f]">заказов</div>
+            <div className="text-[11px] text-muted-foreground">заказов</div>
           </div>
         ))}
       </div>

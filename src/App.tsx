@@ -7,8 +7,8 @@ import { Toaster } from 'sonner';
 import { AuthProvider } from '@/auth/AuthProvider';
 import { AuthGate } from '@/auth/AuthGate';
 import { Layout } from '@/components/Layout';
-import { Dashboard } from '@/pages/Dashboard';
-import { Dashboard as DashboardNew } from '@/pages/DashboardNew';
+import { AnalyticsPage } from '@/pages/Analytics';
+import { Dashboard } from '@/pages/DashboardNew';
 import { Menu } from '@/pages/Menu';
 import { Staff } from '@/pages/Staff';
 import { FloorPlan } from '@/pages/FloorPlan';
@@ -101,7 +101,7 @@ function App() {
        <Route element={<AuthGate />}>
         <Route element={<Layout />}>
          <Route path="/" element={<Dashboard />} />
-         <Route path="/dashboard-new" element={<DashboardNew />} />
+         <Route path="/analytics" element={<AnalyticsPage />} />
          <Route path="/cash-shifts" element={<CashShifts />} />
          <Route path="/transactions" element={<Transactions />} />
          <Route path="/checks" element={<Checks />} />

@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import pencilIcon from '@/assets/icons/pencil.svg';
-import { Search, X } from 'lucide-react';
-import { SearchInput } from '@/components/ui/SearchInput';
+import { Pencil, Search, X } from 'lucide-react';
 import { supabase, VENUE_ID, ORG_ID } from '@/lib/supabase';
 import { useStaff, useInvalidateStaff } from '@/hooks/useStaffData';
 import type { StaffMember } from '@/hooks/useStaffData';
@@ -21,10 +19,10 @@ const ROLE_LABELS: Record<string, string> = {
  waiter: 'Официант',
 };
 
-const generatePin = () => String(Math.floor(1000 + Math.random() * 9000));
+const ROW_ACTION =
+  'opacity-60 group-hover:opacity-100 transition-opacity p-1 cursor-pointer rounded hover:bg-muted/50';
 
-/** Same pattern as Menu: grid + subgrid; actions column fits icons */
-// (table uses semantic <table> with fixed column widths)
+const generatePin = () => String(Math.floor(1000 + Math.random() * 9000));
 
 function formatDate(dateStr: string | null): string {
  if (!dateStr) return '—';
@@ -82,7 +80,6 @@ export function Staff() {
   const { error: uvError } = await supabase.from('user_venues').insert({ user_id: user.id, venue_id: VENUE_ID });
   if (uvError) {
     toast.error('Сотрудник создан, но не привязан к точке: ' + uvError.message);
-    // Clean up the orphaned user
     await supabase.from('users').delete().eq('id', user.id);
     return;
   }
@@ -215,7 +212,7 @@ export function Staff() {
     </div>
    )}
 
-   <table className="w-full table-fixed border-separate border-spacing-0">
+   <table className="table-fixed border-separate border-spacing-0">
     <thead>
      <tr className="text-sm font-semibold text-foreground">
       <th scope="col" className="text-left py-3 px-3 w-[180px]">Имя</th>
@@ -228,15 +225,15 @@ export function Staff() {
     </thead>
     <tbody>
      {isPending && (
-      <tr><td colSpan={6} className="py-12 text-center text-sm">Загрузка…</td></tr>
+      <tr><td colSpan={6} className="py-16 text-center text-sm">Загрузка…</td></tr>
      )}
      {isError && (
-      <tr><td colSpan={6} className="py-12 text-center text-sm text-destructive">{staffError instanceof Error ? staffError.message : 'Не удалось загрузить'}</td></tr>
+      <tr><td colSpan={6} className="py-16 text-center text-sm text-destructive">{staffError instanceof Error ? staffError.message : 'Не удалось загрузить'}</td></tr>
      )}
      {!isPending && !isError && filtered.map((member) => (
       <tr
        key={member.id}
-       className={`group hover:bg-[#EFF0F4] transition-colors ${!member.is_active ? 'opacity-50' : ''}`}
+       className={`group hover:bg-muted/30 transition-colors ${!member.is_active ? 'opacity-50' : ''}`}
       >
        {editingId === member.id ? (
         <>
@@ -272,9 +269,13 @@ export function Staff() {
          </td>
          <td className="py-2 px-3 text-center text-sm tabular-nums">{formatDate(member.last_session_at)}</td>
          <td className="py-2 px-3">
-          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-           <button type="button" onClick={() => startEdit(member)} className="opacity-40 hover:opacity-100 transition-opacity p-1"><img src={pencilIcon} className="w-4 h-4" alt="Редактировать" /></button>
-           <button type="button" onClick={() => handleDelete(member.id)} className="opacity-40 hover:opacity-100 transition-opacity p-1"><X className="w-5 h-5" /></button>
+          <div className="flex justify-end gap-1">
+           <button type="button" onClick={() => startEdit(member)} className={ROW_ACTION} title="Редактировать">
+            <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+           </button>
+           <button type="button" onClick={() => handleDelete(member.id)} className={ROW_ACTION} title="Удалить">
+            <X className="w-4 h-4 text-muted-foreground hover:text-red-600" />
+           </button>
           </div>
          </td>
         </>
@@ -282,7 +283,19 @@ export function Staff() {
       </tr>
      ))}
      {showEmptyList && (
-      <tr><td colSpan={6} className="py-12 text-center text-sm">{search.trim() || roleFilter ? 'Ничего не найдено' : 'Нет сотрудников'}</td></tr>
+      <tr><td colSpan={6} className="py-16 text-center">
+       <p className="text-sm font-medium mb-1">
+        {search.trim() || roleFilter ? 'Ничего не найдено' : 'Сотрудников пока нет'}
+       </p>
+       <p className="text-xs text-muted-foreground mb-4">
+        {search.trim() || roleFilter ? 'Попробуйте изменить фильтры' : 'Добавьте сотрудников, чтобы они могли работать с POS-терминалом'}
+       </p>
+       {!search.trim() && !roleFilter && (
+        <button onClick={() => setShowAddForm(true)} className="text-sm text-primary hover:underline">
+          Добавить сотрудника →
+        </button>
+       )}
+      </td></tr>
      )}
     </tbody>
    </table>

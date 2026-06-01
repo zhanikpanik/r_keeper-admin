@@ -49,6 +49,7 @@ export const mockDashboard: DashboardData = {
       detail: 'Старт: 5 000 сом',
       actionLabel: null,
       actionHref: null,
+      type: 'shift_open',
     },
     {
       id: 'ev2',
@@ -58,6 +59,7 @@ export const mockDashboard: DashboardData = {
       detail: 'Салфетки: 350 сом',
       actionLabel: 'Проверить',
       actionHref: '/transactions',
+      type: 'expense',
     },
     {
       id: 'ev3',
@@ -67,6 +69,7 @@ export const mockDashboard: DashboardData = {
       detail: 'Белая река: 3 500 сом (5 поз.)',
       actionLabel: 'Оформить',
       actionHref: '/warehouse/deliveries',
+      type: 'delivery',
     },
     {
       id: 'ev4',
@@ -76,6 +79,7 @@ export const mockDashboard: DashboardData = {
       detail: 'Кофе: 0.2 кг',
       actionLabel: 'Проверить',
       actionHref: '/warehouse/write-offs',
+      type: 'write_off',
     },
     {
       id: 'ev5',
@@ -85,6 +89,7 @@ export const mockDashboard: DashboardData = {
       detail: 'Такси: 200 сом',
       actionLabel: null,
       actionHref: null,
+      type: 'expense',
     },
   ],
 
@@ -125,5 +130,24 @@ export const mockDashboard: DashboardData = {
     shiftClosed: true,
     cashDifference: 200,
     status: 'normal',
+  },
+
+  topDishes: [
+    { name: 'Латте', qty: 14, revenue: 5600 },
+    { name: 'Американо', qty: 11, revenue: 3300 },
+    { name: 'Чизкейк', qty: 7, revenue: 3150 },
+    { name: 'Маффин', qty: 7, revenue: 2100 },
+    { name: 'Капучино', qty: 6, revenue: 2400 },
+    { name: 'Карамельный латте', qty: 5, revenue: 2250 },
+    { name: 'Круассан', qty: 4, revenue: 1400 },
+    { name: 'Эспрессо', qty: 3, revenue: 600 },
+    { name: 'Мокка', qty: 3, revenue: 1350 },
+  ],
+
+  operationalResult: {
+    revenue: 54200,
+    expenses: 12400,
+    writeOffs: 2100,
+    net: 39700,
   },
 };

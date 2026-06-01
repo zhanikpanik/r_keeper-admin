@@ -13,7 +13,7 @@ export function ActionBar() {
     <div className="sticky top-0 z-10 bg-background border-b px-6 py-3 flex items-center gap-3">
       {actions.map((a) => (
         <Link key={a.href} to={a.href}>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/5 hover:border-primary/50">
             <Plus className="w-4 h-4" />
             {a.label}
           </Button>

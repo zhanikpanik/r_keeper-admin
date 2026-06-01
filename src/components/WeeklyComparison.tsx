@@ -1,11 +1,13 @@
 import ReactECharts from 'echarts-for-react';
 import type { WeekSlice } from '@/hooks/useWeeklyStats';
+import {
+  CHART_GREEN_SOLID, CHART_RED_SOLID, CHART_MUTED, CHART_GRID,
+  CHART_FONT, CHART_FONT_SIZE, CHART_FONT_SIZE_SM,
+  TOOLTIP_STYLE, WEEK_COLORS, WEEK_WIDTHS, WEEK_OPACITIES,
+  axisLabelStyle, axisLineStyle, splitLineStyle,
+} from '@/lib/chartTheme';
 
 const DAY_LABELS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
-
-const WEEK_COLORS = ['#e5e7eb', '#d1d5db', '#64748b', '#00B558'];
-const WEEK_WIDTHS = [1, 1, 1.5, 3];
-const WEEK_OPACITIES = [0.5, 0.6, 0.8, 1];
 
 function formatSom(n: number): string {
   return n.toLocaleString('ru-RU');
@@ -26,30 +28,37 @@ interface Props {
 export function WeeklyComparison({ weeks, isPending }: Props) {
   if (isPending) {
     return (
-      <div className="h-64 flex items-center justify-center text-[13px] text-[#37352f]">
-        Загрузка сравнения…
+      <div className="bg-card rounded-xl p-4">
+        <div className="h-4 bg-muted rounded w-36 mb-3 animate-pulse" />
+        <div className="h-[180px] bg-muted rounded animate-pulse" />
       </div>
     );
   }
 
   if (weeks.length === 0) {
-    return null;
+    return (
+      <div className="bg-card rounded-xl p-4">
+        <h3 className="text-base font-semibold text-foreground mb-3">Неделя к неделе</h3>
+        <div className="h-[180px] flex flex-col items-center justify-center text-muted-foreground gap-2">
+          <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
+          </svg>
+          <span className="text-sm">Нет данных за выбранный период</span>
+        </div>
+      </div>
+    );
   }
 
-  // ECharts option: 4 overlaid line series
   const option = {
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#fff',
-      borderColor: '#e5e7eb',
-      borderWidth: 1,
-      textStyle: { color: '#1e293b', fontSize: 13, fontFamily: 'system-ui, sans-serif' },
-      formatter: (params: { seriesName: string; value: number; color: string }[]) => {
+      ...TOOLTIP_STYLE,
+      formatter: (params: { seriesName: string; value: number; axisIndex: number }[]) => {
         if (!params?.length) return '';
         const dayIdx = params[0]?.axisIndex ?? 0;
         const dayLabel = DAY_LABELS[dayIdx] || '';
         let html = `<div style="font-weight:600;margin-bottom:4px">${dayLabel}</div>`;
-        // Reverse to show newest first
+        // Newest first
         for (let w = weeks.length - 1; w >= 0; w--) {
           const d = weeks[w].days[dayIdx];
           if (!d) continue;
@@ -62,33 +71,22 @@ export function WeeklyComparison({ weeks, isPending }: Props) {
         return html;
       },
     },
-    grid: {
-      top: 8,
-      right: 8,
-      bottom: 24,
-      left: 40,
-    },
+    grid: { top: 8, right: 8, bottom: 24, left: 48 },
     xAxis: {
       type: 'category',
       data: DAY_LABELS,
-      axisLine: { lineStyle: { color: '#f0efed' } },
+      ...axisLineStyle(),
       axisTick: { show: false },
-      axisLabel: {
-        color: '#37352f',
-        fontSize: 11,
-        fontFamily: 'system-ui, sans-serif',
-      },
+      axisLabel: { ...axisLabelStyle(CHART_FONT_SIZE), fontWeight: 600 },
     },
     yAxis: {
       type: 'value',
       min: 0,
       axisLabel: {
-        color: '#37352f',
-        fontSize: 11,
-        fontFamily: 'system-ui, sans-serif',
+        ...axisLabelStyle(CHART_FONT_SIZE),
         formatter: (v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)),
       },
-      splitLine: { lineStyle: { color: '#f0efed', type: 'dashed' } },
+      splitLine: splitLineStyle(),
     },
     series: weeks.map((week, wi) => {
       const isCurrent = wi === weeks.length - 1;
@@ -116,22 +114,18 @@ export function WeeklyComparison({ weeks, isPending }: Props) {
                 type: 'linear',
                 x: 0, y: 0, x2: 0, y2: 1,
                 colorStops: [
-                  { offset: 0, color: 'rgba(0, 181, 88, 0.25)' },
-                  { offset: 1, color: 'rgba(0, 181, 88, 0.04)' },
+                  { offset: 0, color: 'rgba(22, 163, 74, 0.25)' },
+                  { offset: 1, color: 'rgba(22, 163, 74, 0.03)' },
                 ],
               },
             }
           : undefined,
-        emphasis: {
-          symbolSize: 7,
-          focus: 'series',
-        },
+        emphasis: { symbolSize: 7, focus: 'series' },
         z: isCurrent ? 10 : 1,
       };
     }),
   };
 
-  // Summary row data
   const weekSummaries = weeks.map((w, i) => {
     const isCurrent = i === weeks.length - 1;
     const prevRevenue = i > 0 ? weeks[i - 1].totalRevenue : 0;
@@ -146,26 +140,30 @@ export function WeeklyComparison({ weeks, isPending }: Props) {
   });
 
   return (
-    <div>
+    <div className="bg-card rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-semibold text-[#37352f]">
+        <h3 className="text-base font-semibold text-foreground">
           Неделя к неделе
         </h3>
-        <span className="text-[13px] text-[#37352f]">выручка по дням, сом</span>
       </div>
 
       <ReactECharts option={option} style={{ height: 180 }} notMerge />
 
-      {/* Compact weekly summary */}
-      <div className="flex gap-3 mt-2 text-[13px]">
+      {/* Weekly summary row */}
+      <div className="flex gap-3 mt-2 text-sm">
         {weekSummaries.map((ws, i) => (
-          <div key={i} className={`flex-1 min-w-0 ${ws.isCurrent ? 'font-semibold text-green-700' : 'text-[#37352f]'}`}>
-            <div className="truncate">{ws.label.slice(0, 6)}</div>
-            <div className={ws.isCurrent ? 'text-green-700' : 'text-[#37352f]'}>
-              {formatSom(ws.revenue).replace(/\s/g, '\u00A0')}
-            </div>
+          <div
+            key={i}
+            className={`flex-1 min-w-0 ${ws.isCurrent ? 'font-semibold' : ''}`}
+            style={{ color: ws.isCurrent ? CHART_GREEN_SOLID : CHART_MUTED }}
+          >
+            <div className="truncate text-xs">{ws.label.slice(0, 6)}</div>
+            <div className="tabular-nums">{formatSom(ws.revenue).replace(/\s/g, '\u00A0')}</div>
             {ws.delta && (
-              <div className={ws.delta.startsWith('+') ? 'text-green-600' : ws.delta === '—' ? '' : 'text-red-500'}>
+              <div
+                className={`text-xs ${ws.delta.startsWith('+') ? '' : ws.delta === '—' ? '' : ''}`}
+                style={{ color: ws.delta.startsWith('+') ? CHART_GREEN_SOLID : ws.delta === '—' ? CHART_MUTED : CHART_RED_SOLID }}
+              >
                 {ws.delta}
               </div>
             )}

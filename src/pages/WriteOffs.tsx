@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, RotateCcw } from 'lucide-react';
-import { DeleteButton } from '@/components/ui/DeleteButton';
+import { Check, Pencil, RotateCcw, X } from 'lucide-react';
 import { SearchInput } from '@/components/ui/SearchInput';
 import {
  useWarehouseWriteOffs,
@@ -12,8 +11,10 @@ import {
  type WriteOffUiStatus,
 } from '@/hooks/useWarehouse';
 
-const WO_ACTION_CLASS =
- 'inline-flex cursor-pointer items-center justify-center gap-1.5 px-3 py-1 rounded-md text-sm text-[#5D4FF1] hover:text-[#4538c4] hover:bg-[#5D4FF1]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+const ACTION_PRIMARY =
+  'inline-flex cursor-pointer items-center justify-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[#5D4FF1] hover:text-[#4538c4] hover:bg-[#5D4FF1]/10';
+const ROW_ACTION =
+  'opacity-60 group-hover:opacity-100 transition-opacity p-1 cursor-pointer rounded hover:bg-muted/50';
 
 function getPositionPlural(count: number) {
  const n = Math.abs(count) % 100;
@@ -62,7 +63,7 @@ export function WriteOffs() {
 
    {isError && (
     <p className="text-sm text-destructive mb-4">
-     {(error as Error)?.message}. Примените миграцию warehouse.
+     {(error as Error)?.message}
     </p>
    )}
 
@@ -79,7 +80,7 @@ export function WriteOffs() {
    {isLoading && <p className="text-sm text-muted-foreground py-4">Загрузка…</p>}
 
    {!isLoading && (
-    <table className="w-full table-fixed border-separate border-spacing-0">
+    <table className="table-fixed border-separate border-spacing-0">
      <thead>
       <tr className="text-sm font-semibold text-foreground">
        <th scope="col" className="text-left py-3 px-3 w-[100px]">Дата</th>
@@ -94,8 +95,18 @@ export function WriteOffs() {
      </thead>
      <tbody>
       {filtered.length === 0 ? (
-       <tr><td colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
-        {search ? 'Ничего не найдено' : 'Нет списаний. Нажмите «+ Списать»'}
+       <tr><td colSpan={8} className="py-16 text-center">
+        <p className="text-sm font-medium mb-1">
+         {search ? 'Ничего не найдено' : 'Списаний пока нет'}
+        </p>
+        <p className="text-xs text-muted-foreground mb-4">
+         {search ? 'Попробуйте изменить поисковый запрос' : 'Создайте списание, чтобы зафиксировать выбытие товаров со склада'}
+        </p>
+        {!search && (
+         <Link to="/warehouse/write-offs/new" className="text-sm text-primary hover:underline">
+          Создать списание →
+         </Link>
+        )}
        </td></tr>
       ) : (
        filtered.map((wo: WriteOffRow) => {
@@ -103,30 +114,33 @@ export function WriteOffs() {
         const editUrl = `/warehouse/write-offs/${wo.id}/edit`;
         const n = wo.items.length;
         const canExpand = n > 0;
+        const isExpanded = expandedId === wo.id;
 
         return (
          <>
           <tr
            key={wo.id}
-           className={`group cursor-pointer ${expandedId === wo.id ? 'bg-[#EFF0F4]' : 'hover:bg-muted/30'} transition-colors ${isCancelled ? 'opacity-50' : ''}`}
-           onClick={canExpand ? () => setExpandedId(expandedId === wo.id ? null : wo.id) : undefined}
-           tabIndex={0}
+           className={`group cursor-pointer transition-colors
+             ${isExpanded ? 'bg-[#EFF0F4]' : 'hover:bg-muted/30'}
+             ${isCancelled ? 'opacity-50' : ''}`}
+           onClick={canExpand ? () => setExpandedId(isExpanded ? null : wo.id) : undefined}
+           tabIndex={canExpand ? 0 : -1}
            onKeyDown={(e) => {
             if ((e.key === 'Enter' || e.key === ' ') && canExpand) {
              e.preventDefault();
-             setExpandedId(expandedId === wo.id ? null : wo.id);
+             setExpandedId(isExpanded ? null : wo.id);
             }
            }}
           >
            <td className={`py-2 px-3 text-sm ${isCancelled ? 'line-through' : ''}`}>
-            {new Date(wo.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+            {new Date(wo.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
            </td>
            <td className={`py-2 px-3 text-sm truncate ${isCancelled ? 'line-through' : ''}`}>
             {wo.reason_summary || '—'}
            </td>
            <td className="py-2 px-3 text-sm">
             {canExpand ? (
-             <span className={`text-sm ${isCancelled ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+             <span className="text-sm text-foreground">
               {`${n} ${getPositionPlural(n)}`}
              </span>
             ) : (
@@ -142,29 +156,33 @@ export function WriteOffs() {
            <td className="py-2 px-3">
             <div className="flex gap-1 justify-end">
              {wo.status === 'Черновик' && (
-              <button type="button" onClick={(e) => { e.stopPropagation(); postWo.mutate(wo.id); }} disabled={postWo.isPending} className={WO_ACTION_CLASS}>
-               <Check className="w-4 h-4 shrink-0" aria-hidden />Провести
+              <button type="button" onClick={(e) => { e.stopPropagation(); postWo.mutate(wo.id); }} disabled={postWo.isPending} className={ACTION_PRIMARY}>
+               <Check className="w-3.5 h-3.5 shrink-0" />Провести
               </button>
              )}
              {isCancelled && (
-              <button type="button" onClick={(e) => { e.stopPropagation(); restoreWo.mutate(wo.id); }} disabled={restoreWo.isPending} className={WO_ACTION_CLASS}>
-               <RotateCcw className="w-4 h-4 shrink-0" aria-hidden />Восстановить
+              <button type="button" onClick={(e) => { e.stopPropagation(); restoreWo.mutate(wo.id); }} disabled={restoreWo.isPending} className={ACTION_PRIMARY}>
+               <RotateCcw className="w-3.5 h-3.5 shrink-0" />Восстановить
               </button>
              )}
             </div>
            </td>
-           <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button type="button" onClick={(e) => { e.stopPropagation(); navigate(editUrl); }} className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer">
-             Изменить
+           <td className={`py-2 px-3 ${ROW_ACTION}`}>
+            <button type="button" onClick={(e) => { e.stopPropagation(); navigate(editUrl); }} title="Редактировать">
+             <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
             </button>
            </td>
-           <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
-            {!isCancelled && <DeleteButton onClick={() => cancelWo.mutate(wo.id)} />}
+           <td className={`py-2 px-3 ${ROW_ACTION}`}>
+            {!isCancelled && (
+             <button type="button" onClick={(e) => { e.stopPropagation(); cancelWo.mutate(wo.id); }} title="Отменить">
+              <X className="w-4 h-4 text-muted-foreground hover:text-red-600" />
+             </button>
+            )}
            </td>
           </tr>
-          {expandedId === wo.id && canExpand && (
+          {isExpanded && canExpand && (
            <tr key={`${wo.id}-detail`} className="bg-[#EFF0F4]">
-            <td colSpan={8} className="pb-2 pt-0 pl-10">
+            <td colSpan={8} className="pb-4 pt-0 pl-10">
              <div className="max-w-sm space-y-0.5">
               {wo.items.map((item) => (
                <div key={item.id} className="text-sm py-0.5 pl-3 text-muted-foreground">

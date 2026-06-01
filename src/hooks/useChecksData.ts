@@ -14,6 +14,8 @@ export interface CheckItem {
   unitCost: number | null;
 }
 
+export type OrderSource = 'pos' | 'glovo' | 'yandex_eda';
+
 export interface Check {
   id: string;
   tableNumber: string;
@@ -29,6 +31,12 @@ export interface Check {
   profit: number;
   /** true если есть позиции без учёта в прибыли (нет id / cost_price) */
   profitIncomplete: boolean;
+  /** true — быстрый чек (на вынос), false — за столом */
+  isQuickCheck: boolean;
+  /** Источник заказа: pos / glovo / yandex_eda */
+  source: OrderSource;
+  /** Номер заказа в агрегаторе (для сверки) */
+  externalOrderId: string | null;
 }
 
 interface OrderRow {
@@ -38,6 +46,9 @@ interface OrderRow {
   opened_at: string;
   closed_at?: string | null;
   total_amount?: number | string | null;
+  is_quick_check?: boolean | null;
+  source?: string | null;
+  external_order_id?: string | null;
   users?: { name?: string | null } | { name?: string | null }[] | null;
 }
 
@@ -130,6 +141,11 @@ function mapOrderToCheck(
   const items = itemsByOrder[o.id] || [];
   const { profit, incomplete: profitIncomplete } = profitFromItems(items);
 
+  // TODO: when DB has source/external_order_id columns, add to SELECT and remove defaults
+  const source: OrderSource = (o.source === 'glovo' || o.source === 'yandex_eda')
+    ? (o.source as OrderSource)
+    : 'pos';
+
   return {
     id: o.id,
     tableNumber: o.table_number || '—',
@@ -143,6 +159,9 @@ function mapOrderToCheck(
     items,
     profit,
     profitIncomplete,
+    isQuickCheck: Boolean(o.is_quick_check),
+    source,
+    externalOrderId: o.external_order_id || null,
   };
 }
 
