@@ -29,7 +29,8 @@ const navItems: NavItem[] = [
  {
   to: '/menu', label: 'Меню',
   children: [
-   { to: '/menu', label: 'Блюда и категории' },
+   { to: '/menu', label: 'Блюда' },
+   { to: '/menu/categories', label: 'Категории' },
    { to: '/menu/ingredients', label: 'Ингредиенты' },
   ],
  },
@@ -43,10 +44,8 @@ const navItems: NavItem[] = [
  {
   to: '/warehouse', label: 'Склад',
   children: [
-   { to: '/warehouse/deliveries', label: 'Поставки' },
-   { to: '/warehouse/write-offs', label: 'Списания' },
-   { to: '/warehouse/transfers', label: 'Перемещения' },
-   { to: '/warehouse/inventory', label: 'Инвентаризация' },
+   { to: '/warehouse/operations', label: 'Все операции' },
+   { to: '/warehouse/inventory', label: 'Инвентаризации' },
   ],
  },
  { to: '/import', label: 'Импорт' },

@@ -21,17 +21,16 @@ import { useInitDefaults } from '@/hooks/useInitDefaults';
 const AddIngredients = lazy(() => import('@/pages/AddIngredients').then((m) => ({ default: m.AddIngredients })));
 const EditIngredient = lazy(() => import('@/pages/EditIngredient').then((m) => ({ default: m.EditIngredient })));
 const Ingredients = lazy(() => import('@/pages/Ingredients').then((m) => ({ default: m.Ingredients })));
+const Categories = lazy(() => import('@/pages/Categories').then((m) => ({ default: m.Categories })));
 const DishEdit = lazy(() => import('@/pages/DishEdit').then((m) => ({ default: m.DishEdit })));
-const Deliveries = lazy(() => import('@/pages/Deliveries').then((m) => ({ default: m.Deliveries })));
 const NewDelivery = lazy(() => import('@/pages/NewDelivery').then((m) => ({ default: m.NewDelivery })));
-const WriteOffs = lazy(() => import('@/pages/WriteOffs').then((m) => ({ default: m.WriteOffs })));
 const NewWriteOff = lazy(() => import('@/pages/NewWriteOff').then((m) => ({ default: m.NewWriteOff })));
-const Transfers = lazy(() => import('@/pages/Transfers').then((m) => ({ default: m.Transfers })));
 const NewTransfer = lazy(() => import('@/pages/NewTransfer').then((m) => ({ default: m.NewTransfer })));
 const Inventory = lazy(() => import('@/pages/Inventory').then((m) => ({ default: m.Inventory })));
 const Import = lazy(() => import('@/pages/Import').then((m) => ({ default: m.Import })));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
-const WarehousesAdmin = lazy(() => import('@/pages/WarehousesAdmin').then((m) => ({ default: m.WarehousesAdmin })));
+const WarehouseWorkspace = lazy(() => import('@/pages/WarehouseWorkspace').then((m) => ({ default: m.WarehouseWorkspace })));
+const AllOperations = lazy(() => import('@/pages/AllOperations').then((m) => ({ default: m.AllOperations })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -108,28 +107,30 @@ function App() {
          <Route path="/menu" element={<Menu />} />
          <Route path="/menu/dish/new" element={<DishEdit />} />
          <Route path="/menu/dish/:id" element={<DishEdit />} />
+         <Route path="/menu/categories" element={<Categories />} />
          <Route path="/menu/ingredients/add" element={<AddIngredients />} />
          <Route path="/menu/ingredients/:id" element={<EditIngredient />} />
          <Route path="/menu/ingredients" element={<Ingredients />} />
          <Route path="/staff" element={<Staff />} />
          <Route path="/floor-plan" element={<FloorPlan />} />
-         <Route path="/warehouse" element={<Navigate to="/warehouse/deliveries" replace />} />
+         <Route path="/warehouse" element={<Navigate to="/warehouse/operations" replace />} />
+         <Route path="/warehouse/operations" element={<AllOperations />} />
          <Route path="/warehouse/deliveries/new" element={<NewDelivery />} />
          <Route path="/warehouse/deliveries/:id/edit" element={<NewDelivery />} />
          <Route path="/warehouse/deliveries/:id" element={<RedirectDeliveryToEdit />} />
-         <Route path="/warehouse/deliveries" element={<Deliveries />} />
+         <Route path="/warehouse/deliveries" element={<Navigate to="/warehouse/operations?type=delivery" replace />} />
          <Route path="/warehouse/write-offs/new" element={<NewWriteOff />} />
          <Route path="/warehouse/write-offs/:id/edit" element={<NewWriteOff />} />
          <Route path="/warehouse/write-offs/:id" element={<RedirectWriteOffToEdit />} />
-         <Route path="/warehouse/write-offs" element={<WriteOffs />} />
+         <Route path="/warehouse/write-offs" element={<Navigate to="/warehouse/operations?type=write-off" replace />} />
          <Route path="/warehouse/transfers/new" element={<NewTransfer />} />
          <Route path="/warehouse/transfers/:id/edit" element={<NewTransfer />} />
          <Route path="/warehouse/transfers/:id" element={<RedirectTransferToEdit />} />
-         <Route path="/warehouse/transfers" element={<Transfers />} />
+         <Route path="/warehouse/transfers" element={<Navigate to="/warehouse/operations?type=transfer" replace />} />
          <Route path="/warehouse/inventory/:id" element={<Inventory />} />
          <Route path="/warehouse/inventory" element={<Inventory />} />
-         <Route path="/warehouse/:warehouseId" element={<WarehousesAdmin />} />
-         <Route path="/warehouse/settings" element={<Navigate to="/warehouse/deliveries" replace />} />
+         <Route path="/warehouse/:warehouseId" element={<WarehouseWorkspace />} />
+         <Route path="/warehouse/settings" element={<WarehouseWorkspace />} />
          <Route path="/import" element={<Import />} />
          <Route path="/settings" element={<SettingsPage />} />
         </Route>
