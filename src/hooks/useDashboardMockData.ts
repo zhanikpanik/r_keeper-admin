@@ -18,6 +18,8 @@ export interface MockDashboardData {
   totalAlertCount: number;
   criticalCount: number;
   periodLabel: string;
+  shiftStatus: { isOpen: boolean; openedAt: string | null; hoursOpen: number | null; cashier: string | null };
+  dailyRevenues: number[];
 }
 
 function fmt(n: number): string {
@@ -110,5 +112,7 @@ export function getMockData(period: DashboardPeriod): MockDashboardData {
     totalAlertCount: 8,
     criticalCount: 2,
     periodLabel: isToday ? 'сегодня' : isWeek ? 'за неделю' : 'за месяц',
+    shiftStatus: { isOpen: true, openedAt: '10:30', hoursOpen: 5, cashier: 'Айжан' },
+    dailyRevenues: [10500, 12300, 9800, 14200, 11800, 13500, 12850],
   };
 }

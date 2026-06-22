@@ -163,6 +163,8 @@ export interface DashboardData {
   negativeStockItems: NegativeStockItem[];
   /** Общая себестоимость проданных блюд за период (сом) */
   foodCost: number;
+  /** Дневная выручка за последние 7 дней (для спарклайна) */
+  dailyRevenues: number[];
 }
 
 /** Порог: больше этого числа — алерты группируются */

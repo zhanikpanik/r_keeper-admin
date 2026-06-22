@@ -2,6 +2,7 @@ import { ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
 import type { ElementType } from 'react';
 import { cn } from '@/lib/utils';
 import { SomIcon } from '@/components/dashboard/SomIcon';
+import { Sparkline } from '@/components/dashboard/Sparkline';
 
 interface MetricCardProps {
   label: string;
@@ -12,6 +13,8 @@ interface MetricCardProps {
   tooltip?: string;
   /** Иконка в tinted circle (например, Banknote, Users) */
   icon?: ElementType;
+  /** Данные для спарклайна (7 дней) */
+  sparklineData?: number[];
 }
 
 function formatValue(n: number, fmt: 'som' | 'count', approximate?: boolean): string {
@@ -21,7 +24,7 @@ function formatValue(n: number, fmt: 'som' | 'count', approximate?: boolean): st
   return prefix + n.toLocaleString('ru-RU');
 }
 
-export function MetricCard({ label, value, format, trend, tooltip, icon }: MetricCardProps) {
+export function MetricCard({ label, value, format, trend, tooltip, icon, sparklineData }: MetricCardProps) {
   const trendDirection = trend
     ? trend.value > 0 ? 'up' : trend.value < 0 ? 'down' : 'flat'
     : null;
@@ -68,6 +71,14 @@ export function MetricCard({ label, value, format, trend, tooltip, icon }: Metri
           </span>
         )}
       </div>
+
+      {/* Sparkline */}
+      {sparklineData && sparklineData.length > 0 && sparklineData.some(v => v > 0) && (
+        <Sparkline
+          data={sparklineData}
+          className="text-primary/40 mt-1"
+        />
+      )}
 
     </div>
   );

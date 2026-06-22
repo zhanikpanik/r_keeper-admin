@@ -1,3 +1,28 @@
+/**
+ * ═══ РЕАЛЬНОСТЬ ДАННЫХ (Δλ Шаг 1) ═══
+ *
+ * В кофейне Alto Coffee (Бишкек) бариста открывают смену, принимают заказы
+ * от посетителей и готовят напитки по технологическим картам. Кассир фиксирует
+ * приход и расход наличных. Кладовщик принимает поставки, списывает продукты,
+ * проводит инвентаризации.
+ *
+ * Менеджер несколько раз в день открывает дашборд чтобы за 3 секунды понять:
+ * всё ли в порядке? Если нет — какая конкретно проблема и что с ней делать?
+ *
+ * Частица данных: событие с денежным следом (заказ, кассовая операция,
+ * складское движение). У каждого события: что, когда, сколько денег,
+ * к какому домену относится (касса / склад / чеки).
+ *
+ * Три фазы дашборда:
+ *   Фаза 1 (Импорт): миграционные карточки — провести за руку через чистку
+ *   Фаза 2 (Чистка): алерты тают, прогресс виден
+ *   Фаза 3 (Работа): спокойное состояние — выручка, хронология, нет красного
+ *
+ * Алерты группируются по ДОМЕНАМ (Склад / Касса / Чеки), не по severity.
+ * Info-алерты (dead dishes, dead ingredients) — не daily, убраны.
+ * Stock-алерты (negative/zero/low) объединены в один с раскрытием.
+ */
+
 import { useQuery } from '@tanstack/react-query';
 import { supabase, VENUE_ID } from '@/lib/supabase';
 import type {
@@ -204,7 +229,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
   const weekAgo = new Date(todayStart.getTime() - 7 * 86400000).toISOString();
   const { data: weekOrders } = await supabase
     .from('orders')
-    .select('id, total_amount')
+    .select('id, total_amount, opened_at')
     .eq('venue_id', VENUE_ID)
     .eq('status', 'paid')
     .gte('opened_at', weekAgo)
@@ -429,6 +454,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
 
   const negativeCount = warehouseThreats.filter(t => t.negative).length;
   const zeroCount = warehouseThreats.filter(t => t.level === 'critical' && !t.negative).length;
+  const lowOnly = warehouseThreats.filter(t => !t.negative && Number.parseFloat(t.remaining) > 0);
 
   // ═══ NEGATIVE STOCK ITEMS (raw data for inline correction) ═══
   const negativeStockForCorrection: NegativeStockItem[] = (negativeStockItems || []).map(s => {
@@ -719,12 +745,15 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       time: new Date(activeShift.opened_at as string).toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
       actor: 'Смена',
       action: `Открыта · ${hoursText}`,
-      detail: undefined,
+      detail: null,
       type: 'shift_open',
     });
   }
 
   // ═══ ALERTS ═══
+  // Grouped by DOMAIN (Склад / Касса / Чеки), not by severity.
+  // Info-level alerts (dead dishes, dead ingredients) — removed from daily dashboard.
+  // Stock alerts (negative/zero/low) merged into ONE grouped alert.
   const alerts: Alert[] = [];
 
   // Helper: only add alert if it's after baseline date
@@ -733,17 +762,60 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     return dateStr >= baseline;
   };
 
-  // Long shift (>14h) — informational, admin can't close shifts
-  if (shiftOpenHours > 14) {
+  // ═══ WAREHOUSE DOMAIN ═══
+
+  // Stock — one alert summarizing all issues (negative + zero + low)
+  const totalStockProblems = negativeCount + zeroCount + lowOnly.length;
+  if (totalStockProblems > 0) {
+    const parts: string[] = [];
+    if (negativeCount > 0) parts.push(`${negativeCount} в минусе`);
+    if (zeroCount > 0) parts.push(`${zeroCount} на нуле`);
+    if (lowOnly.length > 0) parts.push(`${lowOnly.length} на исходе`);
+    const worstType = negativeCount > 0 ? 'critical' : 'warning';
     alerts.push({
-      id: 'shift-long',
-      type: 'info',
-      message: `Смена открыта ${Math.round(shiftOpenHours)} ч. Попросите кассира закрыть.`,
-      actionLabel: null,
-      actionHref: null,
-      domain: 'cash',
+      id: 'stock',
+      type: worstType,
+      message: `Остатки: ${parts.join(', ')}`,
+      actionLabel: 'Исправить →',
+      actionHref: '/warehouse',
+      domain: 'warehouse',
     });
   }
+
+  // No inventory
+  const { data: lastInventory } = await supabase
+    .from('warehouse_inventory_sessions')
+    .select('conducted_at')
+    .eq('venue_id', VENUE_ID)
+    .order('conducted_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const daysSinceInventory = lastInventory?.conducted_at
+    ? Math.floor((Date.now() - new Date(lastInventory.conducted_at as string).getTime()) / 86400000)
+    : null;
+
+  if (daysSinceInventory === null) {
+    alerts.push({
+      id: 'no-inventory',
+      type: 'warning',
+      message: 'Инвентаризация ни разу не проводилась',
+      actionLabel: 'Начать →',
+      actionHref: '/warehouse/inventory',
+      domain: 'warehouse',
+    });
+  } else if (daysSinceInventory > 30) {
+    alerts.push({
+      id: 'stale-inventory',
+      type: 'warning',
+      message: `Последняя инвентаризация ${daysSinceInventory} дн. назад`,
+      actionLabel: 'Начать →',
+      actionHref: '/warehouse/inventory',
+      domain: 'warehouse',
+    });
+  }
+
+  // ═══ CHECKS DOMAIN ═══
 
   // Stuck orders (>60 min)
   const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -758,51 +830,27 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     alerts.push({
       id: 'stuck-orders',
       type: stuckCount > 5 ? 'critical' : 'warning',
-      message: `${stuckCount} заказ(ов) висят больше 1 ч`,
-      actionLabel: 'Смотреть →',
+      message: `${stuckCount} заказ${stuckCount === 1 ? '' : stuckCount < 5 ? 'а' : 'ов'} висит больше 1 ч`,
+      actionLabel: 'Проверить →',
       actionHref: '/checks',
       domain: 'checks',
     });
   }
 
-  // Negative stock
-  if (negativeCount > 0) {
+  // ═══ CASH DOMAIN ═══
+
+  // Long shift (>14h)
+  if (shiftOpenHours > 14) {
     alerts.push({
-      id: 'stock-negative',
-      type: 'critical',
-      message: `${negativeCount} ингредиентов в минусе`,
-      actionLabel: 'Исправить остатки →',
-      actionHref: '/warehouse',
-      domain: 'warehouse',
+      id: 'shift-long',
+      type: 'info',
+      message: `Смена открыта ${Math.round(shiftOpenHours)} ч. Попросите кассира закрыть.`,
+      actionLabel: null,
+      actionHref: null,
+      domain: 'cash',
     });
   }
 
-  // Zero stock
-  if (zeroCount > 0) {
-    alerts.push({
-      id: 'stock-zero',
-      type: 'warning',
-      message: `${zeroCount} ингредиентов на нуле`,
-      actionLabel: 'Исправить остатки →',
-      actionHref: '/warehouse',
-      domain: 'warehouse',
-    });
-  }
-
-  // Low stock (non-zero, non-negative, just low)
-  const lowOnly = warehouseThreats.filter(t => !t.negative && Number.parseFloat(t.remaining) > 0);
-  if (lowOnly.length > 0 && lowOnly.length <= 8) {
-    alerts.push({
-      id: 'stock-low',
-      type: 'warning',
-      message: `${lowOnly.length} ингредиентов на исходе`,
-      actionLabel: 'Исправить остатки →',
-      actionHref: '/warehouse',
-      domain: 'warehouse',
-    });
-  }
-
-  // ═══ CASH ANOMALIES ═══
   // Expenses without description
   const { data: blankExpenses } = await supabase
     .from('cash_movements')
@@ -819,7 +867,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       id: 'blank-expense',
       type: 'warning',
       message: `${blankExpenseCount} расходов без описания`,
-      actionLabel: 'Заполнить →',
+      actionLabel: 'Добавить описание →',
       actionHref: '/transactions',
       domain: 'cash',
     });
@@ -851,7 +899,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
             id: `suspicious-check-${o.id}`,
             type: 'warning',
             message: `Чек ...${o.id.slice(-6)}: оплачено ${fmtSom(paidTotal)} из ${fmtSom(Math.round(addedTotal))}`,
-            actionLabel: 'Смотреть →',
+            actionLabel: 'Проверить чек →',
             actionHref: `/checks`,
             domain: 'checks',
           });
@@ -867,7 +915,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       id: 'many-refunds',
       type: 'warning',
       message: `${refundCount} возвратов за смену`,
-      actionLabel: 'Смотреть →',
+      actionLabel: 'Проверить →',
       actionHref: '/checks',
       domain: 'checks',
     });
@@ -907,7 +955,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
           id: `shift-discrepancy-${shift.id}`,
           type: 'critical',
           message: `Расхождение ${fmtSom(diff)} сом (${Math.round(diff / shiftRevenue * 100)}% от выручки)`,
-          actionLabel: 'К смене →',
+          actionLabel: 'Проверить смену →',
           actionHref: `/cash-shifts?shift=${shift.id}`,
           domain: 'cash',
         });
@@ -950,45 +998,12 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
           id: `staff-refunds-${sid}`,
           type: 'warning',
           message: `${stats.name}: ${Math.round(rate * 100)}% возвратов (среднее ${Math.round(avgRate * 100)}%)`,
-          actionLabel: 'Смотреть →',
+          actionLabel: 'Проверить официанта →',
           actionHref: `/checks`,
           domain: 'staff',
         });
       }
     }
-  }
-
-  // ═══ NO INVENTORY (>30 days or never) ═══
-  const { data: lastInventory } = await supabase
-    .from('warehouse_inventory_sessions')
-    .select('conducted_at')
-    .eq('venue_id', VENUE_ID)
-    .order('conducted_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const daysSinceInventory = lastInventory?.conducted_at
-    ? Math.floor((Date.now() - new Date(lastInventory.conducted_at as string).getTime()) / 86400000)
-    : null;
-
-  if (daysSinceInventory === null) {
-    alerts.push({
-      id: 'no-inventory-ever',
-      type: 'warning',
-      message: 'Инвентаризация ни разу не проводилась',
-      actionLabel: 'Начать →',
-      actionHref: '/warehouse/inventory',
-      domain: 'warehouse',
-    });
-  } else if (daysSinceInventory > 30) {
-    alerts.push({
-      id: 'stale-inventory',
-      type: 'warning',
-      message: `Последняя инвентаризация ${daysSinceInventory} дней назад`,
-      actionLabel: 'Начать →',
-      actionHref: '/warehouse/inventory',
-      domain: 'warehouse',
-    });
   }
 
   // ═══ ANOMALOUS DELIVERIES (qty > 3x avg, min 3 past deliveries) ═══
@@ -1035,79 +1050,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
           actionLabel: 'Проверить →',
           actionHref: '/warehouse/operations?type=delivery',
           domain: 'warehouse',
-        });
-      }
-    }
-  }
-
-  // ═══ DEAD DISHES (0 sales in 14 days, created >14 days ago) ═══
-  const { data: deadDishes, error: deadDishesErr } = await supabase
-    .from('products')
-    .select('id, name')
-    .eq('venue_id', VENUE_ID)
-    .eq('type', 'dish')
-    .eq('is_active', true)
-    .lt('created_at', fourteenDaysAgo)
-    .limit(20);
-
-  if (!deadDishesErr && deadDishes && deadDishes.length > 0) {
-    const deadDishIds = deadDishes.map((d: any) => d.id);
-    const { data: soldDishes } = await supabase
-      .from('order_items')
-      .select('product_id')
-      .in('product_id', deadDishIds)
-      .gte('created_at', fourteenDaysAgo)
-      .limit(1);
-    const soldSet = new Set((soldDishes || []).map((s: any) => s.product_id));
-    const trulyDead = deadDishes.filter((d: any) => !soldSet.has(d.id));
-    for (const dish of trulyDead) {
-      alerts.push({
-        id: `dead-dish-${dish.id}`,
-        type: 'info',
-        message: `Блюдо «${dish.name}» — 0 продаж за 14 дней`,
-        actionLabel: 'В меню →',
-        actionHref: `/menu/dish/${dish.id}`,
-        domain: 'menu',
-      });
-    }
-  }
-
-  // ═══ DEAD INGREDIENTS (0 movements in 14 days, has stock, created >14 days ago) ═══
-  const { data: deadIngredients } = await supabase
-    .from('products')
-    .select('id, name')
-    .eq('venue_id', VENUE_ID)
-    .eq('type', 'ingredient')
-    .eq('is_active', true)
-    .lt('created_at', fourteenDaysAgo)
-    .limit(20);
-
-  if (deadIngredients && deadIngredients.length > 0) {
-    const deadIngIds = deadIngredients.map((d: any) => d.id);
-    const { data: inStock } = await supabase
-      .from('stock_items')
-      .select('product_id')
-      .in('product_id', deadIngIds)
-      .limit(50);
-    const inStockSet = new Set((inStock || []).map((s: any) => s.product_id));
-    const stockIds = deadIngIds.filter((id: string) => inStockSet.has(id));
-    if (stockIds.length > 0) {
-      const { data: moved } = await supabase
-        .from('inventory_movements')
-        .select('product_id')
-        .in('product_id', stockIds)
-        .gte('occurred_at', fourteenDaysAgo)
-        .limit(1);
-      const movedSet = new Set((moved || []).map((m: any) => m.product_id));
-      const trulyDead = deadIngredients.filter((d: any) => inStockSet.has(d.id) && !movedSet.has(d.id));
-      for (const ing of trulyDead) {
-        alerts.push({
-          id: `dead-ingredient-${ing.id}`,
-          type: 'info',
-          message: `Ингредиент «${ing.name}» — 0 движений за 14 дней`,
-          actionLabel: 'В меню →',
-          actionHref: `/menu/ingredients/${ing.id}`,
-          domain: 'menu',
         });
       }
     }
@@ -1189,6 +1131,19 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     },
   ];
 
+  // ═══ DAILY REVENUE SPARKLINE (last 7 days) ═══
+  const dailyRevenues: number[] = [];
+  for (let d = 6; d >= 0; d--) {
+    const dayStart = new Date(todayStart.getTime() - d * 86400000);
+    const dayEnd = new Date(dayStart.getTime() + 86400000);
+    // Count from already fetched weekOrders if available
+    const daySum = (weekOrders || []).filter((o: any) => {
+      const t = new Date(o.opened_at || o.created_at || 0).getTime();
+      return t >= dayStart.getTime() && t < dayEnd.getTime();
+    }).reduce((s: number, o: any) => s + (Number(o.total_amount) || 0), 0);
+    dailyRevenues.push(daySum);
+  }
+
   // ═══ YESTERDAY SUMMARY ═══
   const yesterday: YesterdaySummary = {
     revenue: yesterdayRevenue || null,
@@ -1224,6 +1179,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     periodLabel: getPeriodLabel(period),
     negativeStockItems: negativeStockForCorrection,
     foodCost: totalFoodCost,
+    dailyRevenues,
   };
 }
 
