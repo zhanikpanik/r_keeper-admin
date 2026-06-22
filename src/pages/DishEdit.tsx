@@ -46,7 +46,7 @@ function InputWithSuffix({ suffix, defaultValue, onSave, className = '' }: {
  return (
   <div className={`${className} relative`}>
    <input
-    className="w-full pl-3 pr-8 py-2 border border-[#E6E5E3] rounded-lg text-sm text-right"
+    className="w-full pl-3 pr-8 py-2 border border-border rounded-lg text-sm text-right"
     value={value}
     inputMode="decimal"
     onChange={(e) => setValue(sanitizeDecimalString(e.target.value))}
@@ -82,7 +82,7 @@ function CategoryDropdown({ categories, value, onChange }: {
   <div className="relative w-full">
    <button
     onClick={() => setOpen(!open)}
-    className="w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm text-left flex items-center justify-between"
+    className="w-full px-3 py-2 border border-border rounded-lg text-sm text-left flex items-center justify-between"
    >
     <span className={selected ? 'text-foreground' : 'text-muted-foreground'}>
      {selected?.name || 'Без категории'}
@@ -284,7 +284,6 @@ export function DishEdit() {
 
  async function handleDelete() {
   if (!currentDishId) return;
-  if (!confirm('Удалить блюдо? Это действие нельзя отменить.')) return;
   const { error: recErr } = await supabase.from('recipe_items').delete().eq('product_id', currentDishId);
   if (recErr) {
    toast.error(`Не удалось удалить состав: ${recErr.message}`);
@@ -302,6 +301,7 @@ export function DishEdit() {
   }
   invalidate(currentDishId);
   navigate('/menu');
+  toast.success('Блюдо удалено');
  }
 
  async function handleAddIngredient() {
@@ -516,9 +516,11 @@ export function DishEdit() {
  }
 
  const renderModSwitcher = (group: any) => (
-  <div
-   className="inline-flex rounded-md p-0.5 shrink-0"
-   style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.08)' }}
+  <div className="inline-flex items-center gap-1.5">
+   <span className="text-sm text-muted-foreground">Выбор:</span>
+   <div
+   className="inline-flex rounded-md bg-[#F2F2F7] p-0.5 shrink-0 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
   >
    <button
     onClick={async () => {
@@ -530,12 +532,12 @@ export function DishEdit() {
      }
      invalidate(currentDishId);
     }}
-    className={`px-2 py-0.5 rounded text-sm transition-all ${
-     group.max_select === 1 ? 'bg-white text-foreground' : 'text-muted-foreground'
+    className={`px-2 py-0.5 rounded-md text-sm transition-all ${
+     group.max_select === 1 ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground'
     }`}
-    style={group.max_select === 1 ? { boxShadow: '0 1px 2px rgba(0,0,0,0.1)' } : {}}
+
    >
-    один
+    Только один
    </button>
    <button
     onClick={async () => {
@@ -547,13 +549,14 @@ export function DishEdit() {
      }
      invalidate(currentDishId);
     }}
-    className={`px-2 py-0.5 rounded text-sm transition-all ${
-     group.max_select !== 1 ? 'bg-white text-foreground' : 'text-muted-foreground'
+    className={`px-2 py-0.5 rounded-md text-sm transition-all ${
+     group.max_select !== 1 ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground'
     }`}
-    style={group.max_select !== 1 ? { boxShadow: '0 1px 2px rgba(0,0,0,0.1)' } : {}}
+
    >
-    несколько
+    Любое количество
    </button>
+  </div>
   </div>
  );
 
@@ -567,7 +570,7 @@ export function DishEdit() {
    <div className="space-y-4">
     <Field label="Название">
      <input
-      className="w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+      className="w-full px-3 py-2 border border-border rounded-lg text-sm "
       value={name}
       onChange={(e) => setName(e.target.value)}
      />
@@ -576,17 +579,17 @@ export function DishEdit() {
     <Field label="Категория">
      {categories.length <= 4 ? (
       <div
-       className="inline-flex rounded-lg p-0.5"
-       style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+       className="inline-flex rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
       >
        {categories.map((c: any) => (
         <button
          key={c.id}
          onClick={() => setCategoryId(categoryId === c.id ? '' : c.id)}
-         className={`px-4 py-1.5 rounded-md text-sm transition-all ${
-          categoryId === c.id ? 'bg-white text-foreground' : 'text-muted-foreground hover:text-foreground'
+         className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
+          categoryId === c.id ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
          }`}
-         style={categoryId === c.id ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}
+         style={categoryId === c.id ? {  } : {}}
         >
          {c.name}
         </button>
@@ -603,19 +606,19 @@ export function DishEdit() {
 
     <Field label="Цех">
      <div
-      className="inline-flex rounded-lg p-0.5"
-      style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+      className="inline-flex rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
      >
       {workshops.map((w: any) => (
        <button
         key={w.id}
         onClick={() => setWorkshopId(workshopId === w.id ? '' : w.id)}
-        className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+        className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
          workshopId === w.id
-          ? 'bg-white text-foreground'
+          ? 'bg-white text-foreground shadow-sm'
           : 'text-muted-foreground hover:text-foreground'
         }`}
-        style={workshopId === w.id ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}
+
        >
         {w.name}
        </button>
@@ -627,7 +630,7 @@ export function DishEdit() {
      <label className="w-24 text-sm text-muted-foreground shrink-0">Цена</label>
      <div className="w-28 relative">
       <input
-       className="w-full pl-3 pr-11 py-2 border border-[#E6E5E3] rounded-lg text-sm text-right"
+       className="w-full pl-3 pr-11 py-2 border border-border rounded-lg text-sm text-right"
        inputMode="decimal"
        value={price}
        onChange={(e) => setPrice(sanitizeDecimalString(e.target.value))}
@@ -649,9 +652,9 @@ export function DishEdit() {
 
    {/* Recipe / Состав */}
    <div className="mb-10">
-    <h3 className="text-lg font-semibold mb-4">Состав</h3>
+    <h3 className="text-lg font-bold mb-4">Состав</h3>
     {!currentDishId ? (
-     <p className="text-xs text-muted-foreground">
+     <p className="text-sm text-muted-foreground">
       Сначала сохраните карточку блюда, после этого можно редактировать состав.
      </p>
     ) : (
@@ -714,7 +717,7 @@ export function DishEdit() {
          <input
           id="ing-qty"
           ref={ingQtyRef}
-          className="w-full pl-3 pr-8 py-2 border border-[#E6E5E3] rounded-lg text-sm text-right"
+          className="w-full pl-3 pr-8 py-2 border border-border rounded-lg text-sm text-right"
           placeholder="0"
           inputMode="decimal"
           value={newIngQty}
@@ -741,14 +744,13 @@ export function DishEdit() {
           : ''}
         </div>
         <div className="w-6 flex justify-end">
-         <button onClick={() => { setShowAddIngredient(false); setIngredientSearch(''); setSelectedIngId(''); setNewIngQty(''); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
+         <button onClick={() => { setShowAddIngredient(false); setIngredientSearch(''); setSelectedIngId(''); setNewIngQty(''); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-sm font-medium hover:text-foreground transition-colors">✕</button>
         </div>
        </div>
       )}
       <button
        onClick={() => setShowAddIngredient(true)}
-       className="py-1.5 mt-1 text-sm font-medium transition-colors cursor-pointer hover:opacity-80"
-       style={{ color: '#5D4FF1' }}
+       className="py-1.5 mt-1 text-sm font-medium px-3 border rounded-md hover:bg-accent transition-colors"
       >
        + Добавить
       </button>
@@ -767,14 +769,14 @@ export function DishEdit() {
 
    {/* Modifiers */}
    <div className="mb-10">
-    <h3 className="text-lg font-semibold mb-4">Модификаторы</h3>
+    <h3 className="text-lg font-bold mb-4">Модификаторы</h3>
     {!currentDishId && (
-     <p className="text-xs text-muted-foreground mb-3">
+     <p className="text-sm text-muted-foreground mb-3">
       Сохраните блюдо, чтобы добавить группы и модификаторы.
      </p>
     )}
     {!workshopId && (
-     <p className="text-xs text-amber-700 mb-3">
+     <p className="text-sm text-amber-700 mb-3">
       Выберите цех блюда, чтобы выбирать ингредиенты модификаторов по складам этого цеха.
      </p>
     )}
@@ -855,7 +857,7 @@ export function DishEdit() {
         <div className="w-20 relative">
          <input
           id="mod-price"
-          className="w-full pl-3 pr-8 py-2 border border-[#E6E5E3] rounded-lg text-sm text-right"
+          className="w-full pl-3 pr-8 py-2 border border-border rounded-lg text-sm text-right"
           placeholder="0"
           inputMode="decimal"
           value={newModPrice}
@@ -867,7 +869,7 @@ export function DishEdit() {
         </div>
         <div className="w-20 relative">
          <input
-          className="w-full pl-3 pr-8 py-2 border border-[#E6E5E3] rounded-lg text-sm text-right"
+          className="w-full pl-3 pr-8 py-2 border border-border rounded-lg text-sm text-right"
           placeholder="0"
           inputMode="decimal"
           value={newModQty}
@@ -878,14 +880,13 @@ export function DishEdit() {
          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">{selectedModUnit}</span>
         </div>
         <div className="w-6 flex justify-end">
-         <button onClick={() => { setAddingModToGroup(null); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
+         <button onClick={() => { setAddingModToGroup(null); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); }} className="px-2.5 py-1 bg-secondary text-muted-foreground rounded text-sm font-medium hover:text-foreground transition-colors">✕</button>
         </div>
        </div>
       )}
       <button
        onClick={() => { setAddingModToGroup(group.id); setModIngSearch(''); setModIngId(''); setNewModPrice(''); setNewModQty(''); }}
-       className="py-1 text-sm font-medium transition-colors cursor-pointer hover:opacity-80"
-       style={{ color: '#5D4FF1' }}
+       className="py-1 text-sm font-medium px-3 border rounded-md hover:bg-accent transition-colors"
       >
        + Добавить
       </button>
@@ -898,7 +899,7 @@ export function DishEdit() {
       {/* Create new — always on top */}
       <div className="flex items-center gap-2 mb-2">
        <input
-       className="flex-1 px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+        className="flex-1 max-w-xs px-3 py-1.5 border border-border rounded-lg text-sm"
         ref={groupNameRef}
         placeholder="Название нового набора"
         value={newGroupName}
@@ -906,38 +907,26 @@ export function DishEdit() {
         onKeyDown={(e) => e.key === 'Enter' && handleCreateModGroup()}
         autoFocus
        />
-       <div
-        className="inline-flex rounded-lg p-0.5 shrink-0"
-        style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
-       >
+       <div className="inline-flex rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
         <button
+         type="button"
          onClick={() => setNewGroupType('single')}
-         className={`px-3 py-1 rounded-md text-sm transition-all ${
-          newGroupType === 'single' ? 'bg-white text-foreground' : 'text-muted-foreground'
-         }`}
-         style={newGroupType === 'single' ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } : {}}
-        >
-         Один
-        </button>
+         className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${newGroupType === 'single' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+        >Только один</button>
         <button
-         onClick={() => setNewGroupType('multi')}
-         className={`px-3 py-1 rounded-md text-sm transition-all ${
-          newGroupType === 'multi' ? 'bg-white text-foreground' : 'text-muted-foreground'
-         }`}
-         style={newGroupType === 'multi' ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } : {}}
-        >
-         Несколько
-        </button>
+         type="button"
+         onClick={() => setNewGroupType('multiple')}
+         className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${newGroupType === 'multiple' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+        >Любое количество</button>
        </div>
-       <button onClick={handleCreateModGroup} className="px-2.5 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors">✓</button>
-       <button onClick={() => { setShowAddModGroup(false); setNewGroupName(''); }} className="px-2.5 py-1.5 bg-secondary text-muted-foreground rounded text-xs font-medium hover:text-foreground transition-colors">✕</button>
+       <button onClick={handleCreateModGroup} className="px-2.5 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/80 transition-colors">✓</button>
+       <button onClick={() => { setShowAddModGroup(false); setNewGroupName(''); }} className="px-2.5 py-1.5 bg-secondary text-muted-foreground rounded-lg text-sm font-medium hover:text-foreground transition-colors">✕</button>
       </div>
      </div>
     ) : (
      <button
       onClick={() => setShowAddModGroup(true)}
-      className="mt-2 text-sm transition-opacity hover:opacity-80"
-      style={{ backgroundColor: '#EFF0F4', color: '#000', padding: '8px 12px', borderRadius: '6px' }}
+      className="mt-2 px-3 py-2 bg-[#F2F2F7] rounded-lg text-sm font-medium hover:bg-[#E8E8ED] transition-colors"
      >
       Новый набор модификаторов
      </button>

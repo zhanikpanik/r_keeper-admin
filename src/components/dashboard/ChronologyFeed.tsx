@@ -4,34 +4,32 @@ import { cn } from '@/lib/utils';
 import type { ChronologyEvent, ChronologyEventType } from '@/types/dashboard';
 
 const eventIcons: Record<ChronologyEventType, { Icon: LucideIcon; color: string }> = {
-  shift_open: { Icon: Play,        color: 'text-green-600 bg-green-50' },
-  expense:    { Icon: ArrowDownRight, color: 'text-amber-600 bg-amber-50' },
-  delivery:   { Icon: Truck,       color: 'text-blue-600 bg-blue-50' },
+  shift_open: { Icon: Play,        color: 'text-success bg-success/10' },
+  expense:    { Icon: ArrowDownRight, color: 'text-warning bg-warning/10' },
+  delivery:   { Icon: Truck,       color: 'text-info bg-info/10' },
   write_off:  { Icon: Trash2,      color: 'text-destructive bg-destructive/10' },
 };
 
 interface ChronologyFeedProps {
   events: ChronologyEvent[];
+  title?: string;
 }
 
-export function ChronologyFeed({ events }: ChronologyFeedProps) {
+export function ChronologyFeed({ events, title = 'События' }: ChronologyFeedProps) {
   if (events.length === 0) {
     return (
       <div>
-        <h2 className="text-base font-semibold text-foreground mb-3">События сегодня</h2>
-        <div className="flex flex-col items-center gap-2 py-6 text-muted-foreground">
-          <Clock className="w-8 h-8 opacity-40" />
-          <p className="text-sm">Пока ничего не происходило</p>
-        </div>
+        <h2 className="text-base font-medium text-foreground mb-1">{title}</h2>
+        <p className="text-sm text-muted-foreground">За сегодня событий нет</p>
       </div>
     );
   }
 
   return (
     <div>
-      <h2 className="text-base font-semibold text-foreground mb-3">События сегодня</h2>
+      <h2 className="text-base font-medium text-foreground mb-3">{title}</h2>
 
-      <div className="space-y-0">
+      <div>
         {events.map((event, i) => {
           const eventMeta = event.type ? eventIcons[event.type] : null;
           const EventIcon = eventMeta?.Icon;
@@ -44,35 +42,31 @@ export function ChronologyFeed({ events }: ChronologyFeedProps) {
               i < events.length - 1 ? 'border-b border-border/30' : '',
             )}
           >
-            {/* Icon circle + Time */}
             <div className="flex items-center gap-2 shrink-0">
               {EventIcon && eventMeta && (
                 <span className={cn('w-5 h-5 rounded-full flex items-center justify-center', eventMeta.color)}>
                   <EventIcon className="w-3 h-3" />
                 </span>
               )}
-              <span className="text-xs text-muted-foreground w-10 tabular-nums">
+              <span className="text-sm text-muted-foreground w-10 tabular-nums">
                 {event.time}
               </span>
             </div>
 
-            {/* Actor + Action */}
             <span className="text-sm font-medium text-foreground">
               {event.actor}
             </span>
             <span className="text-sm text-foreground">{event.action}</span>
 
-            {/* Detail (optional) */}
             {event.detail && (
               <span className="text-sm text-muted-foreground">
                 — {event.detail}
               </span>
             )}
 
-            {/* Action badge */}
             {event.actionLabel && event.actionHref && (
               <Link to={event.actionHref} className="shrink-0">
-                <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                <span className="inline-flex items-center text-sm font-medium px-2 py-0.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
                   {event.actionLabel}
                 </span>
               </Link>

@@ -15,7 +15,8 @@ interface MetricCardProps {
 }
 
 function formatValue(n: number, fmt: 'som' | 'count', approximate?: boolean): string {
-  const prefix = approximate ? '≈ ' : '';
+  // Only show ≈ for som format with no trend
+  const prefix = (approximate && fmt === 'som') ? '≈ ' : '';
   if (fmt === 'count') return prefix + n.toLocaleString('ru-RU');
   return prefix + n.toLocaleString('ru-RU');
 }
@@ -27,7 +28,7 @@ export function MetricCard({ label, value, format, trend, tooltip, icon }: Metri
 
   const trendMeta = trendDirection
     ? {
-        up: { Icon: ArrowUp, color: 'text-green-600' },
+        up: { Icon: ArrowUp, color: 'text-success' },
         down: { Icon: ArrowDown, color: 'text-destructive' },
         flat: { Icon: ArrowRight, color: 'text-muted-foreground' },
       }[trendDirection]

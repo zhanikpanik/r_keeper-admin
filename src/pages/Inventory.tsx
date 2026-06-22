@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowLeft, Check, Search } from 'lucide-react';
 import { SearchInput } from '@/components/ui/SearchInput';
@@ -20,6 +21,7 @@ import {
  fetchAdminInventoryPeriodMovements,
  mergePeriodMovementsIntoCountRows,
  resolveInventoryMovementWindow,
+ resolveWorkshopToWarehouseId,
 } from '@/lib/inventoryPeriodMovements';
 
 type InventoryStep = 'history' | 'setup' | 'counting';
@@ -155,6 +157,53 @@ export function Inventory() {
  const saveLines = useSaveInventoryLines();
  const postSession = usePostInventorySession();
  const queryClient = useQueryClient();
+ const [searchParams, setSearchParams] = useSearchParams();
+
+ // Quick-start from dashboard: skip setup, auto-create partial session
+ useEffect(() => {
+   const quick = searchParams.get('quick');
+   const products = searchParams.get('products');
+   const warehouse = searchParams.get('warehouse');
+   if (quick !== 'true' || !products || !warehouse || activeSessionId) return;
+
+   const productIds = products.split(',').filter(Boolean);
+   if (productIds.length === 0) return;
+
+   let cancelled = false;
+   setSelectedWorkshopId(warehouse);
+   setInventoryType('partial');
+   setPartialSelectedIds(productIds);
+
+   (async () => {
+     try {
+       const id = await createSession.mutateAsync({
+         warehouse_id: warehouse,
+         workshop_id: undefined,
+         inventory_type: 'partial',
+         conducted_at: new Date().toISOString(),
+       });
+       if (cancelled) return;
+       setActiveSessionId(id);
+       setStep('counting');
+       setCountingRowsLoading(true);
+       try {
+         await loadCountingRows(id, warehouse, { mode: 'partial', partialIds: productIds });
+       } finally {
+         if (!cancelled) setCountingRowsLoading(false);
+       }
+       setSearchParams({}, { replace: true });
+     } catch (err) {
+       if (!cancelled) {
+         toast.error('Не удалось создать быструю инвентаризацию');
+         setStep('history');
+         setSearchParams({}, { replace: true });
+       }
+     }
+   })();
+
+   return () => { cancelled = true; };
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, []);
 
  const ingredientsForPartialSelect = useMemo(() => {
   const q = partialSearch.trim().toLowerCase();
@@ -173,14 +222,21 @@ export function Inventory() {
       setMovementPeriodHint(null);
       return baseRows;
      }
-     const window = await resolveInventoryMovementWindow(sessionId, workshopId);
+     // selectedWorkshopId is actually a warehouse_id (misnamed variable).
+     // It's set from the warehouses list in the setup form.
+     const warehouseId = selectedWorkshopId;
+     if (!warehouseId) {
+      setMovementPeriodHint(null);
+      return baseRows;
+     }
+     const window = await resolveInventoryMovementWindow(sessionId, warehouseId);
      if (!window) {
       setMovementPeriodHint(null);
       return baseRows;
      }
      const map = await fetchAdminInventoryPeriodMovements(
       VENUE_ID,
-      workshopId,
+      warehouseId,
       window.pFrom,
       window.pTo
      );
@@ -278,7 +334,6 @@ export function Inventory() {
  };
 
  const handleDeleteSession = async (id: string) => {
-  if (!confirm('Удалить инвентаризацию?')) return;
   const { error: linesErr } = await supabase
    .from('warehouse_inventory_lines')
    .delete()
@@ -332,42 +387,35 @@ export function Inventory() {
 
   return (
    <div className="p-8 [&_button]:cursor-pointer">
-    <div className="flex items-center justify-between mb-6">
+   <div className="flex items-center justify-between mb-6">
      <h2 className="text-2xl font-bold">Инвентаризация</h2>
-    </div>
-
-    <div className="flex items-center gap-2 mb-4">
-     <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-64 bg-secondary/30">
-      <Search className="w-3.5 h-3.5 text-muted-foreground opacity-40" alt="" />
-      <input
-       className="bg-transparent text-sm outline-none flex-1"
-       placeholder="Поиск по складу или дате..."
-       value={search}
-       onChange={(e) => setSearch(e.target.value)}
-      />
-     </div>
      <button
       onClick={() => {
        setPartialSelectedIds([]);
        setPartialSearch('');
        setStep('setup');
       }}
-      className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors"
+      className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
      >
       + Начать инвентаризацию
      </button>
     </div>
 
+    <div className="flex items-center gap-2 mb-4">
+     <SearchInput value={search} onChange={setSearch} placeholder="Поиск по складу или дате..." className="w-64" />
+    </div>
+
     {invLoading && <p className="text-sm text-muted-foreground py-4">Загрузка…</p>}
 
-    <table className="w-full table-fixed border-separate border-spacing-0">
-     <thead>
-      <tr className="text-sm font-semibold text-foreground">
-       <th scope="col" className="text-left py-3 px-3 w-[100px]">Дата</th>
-       <th scope="col" className="text-left py-3 px-3 w-[180px]">Склад</th>
-       <th scope="col" className="text-center py-3 px-3 w-[120px]">Статус</th>
-       <th scope="col" className="text-right py-3 px-3 w-[120px]">Результат</th>
-       <th scope="col" className="py-3 px-3 w-[140px]" />
+    <div className="max-w-4xl">
+    <table className="table-fixed border-separate border-spacing-0 w-full">
+     <thead className="sticky top-0 z-10 bg-background">
+      <tr className="text-sm font-medium text-foreground">
+       <th scope="col" className="text-left py-1.5 px-3 w-[100px]">Дата</th>
+       <th scope="col" className="text-left py-1.5 px-3 w-[180px]">Склад</th>
+       <th scope="col" className="text-center py-1.5 px-3 w-[120px]">Статус</th>
+       <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Результат</th>
+       <th scope="col" className="py-1.5 px-3 w-[140px]" />
        <th scope="col" className="w-[32px]" />
       </tr>
      </thead>
@@ -379,19 +427,19 @@ export function Inventory() {
          key={inv.id}
          className="group hover:bg-muted/30 transition-colors"
         >
-        <td className="py-2 px-3 text-sm">
+        <td className="py-1.5 px-3 text-sm">
            {new Date(inv.date).toLocaleDateString('ru-RU', {
             day: 'numeric',
             month: 'long',
            })}
         </td>
-         <td className="py-2 px-3 text-sm truncate">{inv.warehouse}</td>
-         <td className="py-2 px-3 text-center text-sm"><span className={getStatusColor(inv.status)}>{inv.status}</span></td>
-        <td className={`py-2 px-3 text-sm text-right tabular-nums font-medium ${inv.result < 0 ? 'text-red-600' : 'text-green-600'}`}>
+         <td className="py-1.5 px-3 text-sm truncate">{inv.warehouse}</td>
+         <td className="py-1.5 px-3 text-center text-sm"><span className={getStatusColor(inv.status)}>{inv.status}</span></td>
+        <td className={`py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap font-medium ${inv.result < 0 ? 'text-red-600' : 'text-green-600'}`}>
            {inv.result > 0 ? '+' : ''}
            {somRounded(inv.result).toLocaleString()} сом
         </td>
-         <td className="py-2 px-3">
+         <td className="py-1.5 px-3">
            {isDraft && (
             <button
              type="button"
@@ -402,7 +450,7 @@ export function Inventory() {
             </button>
            )}
          </td>
-         <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
+         <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
            {isDraft && (
             <DeleteButton onClick={() => handleDeleteSession(inv.id)} />
            )}
@@ -417,6 +465,7 @@ export function Inventory() {
       )}
     </tbody>
     </table>
+    </div>
    </div>
   );
  }
@@ -435,7 +484,7 @@ export function Inventory() {
      className="flex items-center gap-1.5 text-sm hover:text-foreground transition-colors mb-8"
     >
      <ArrowLeft className="w-4 h-4" />
-     Назад к инвентаризациям
+     Инвентаризации
     </button>
 
     <h2 className="text-2xl font-bold mb-8">Новая инвентаризация</h2>
@@ -461,8 +510,8 @@ export function Inventory() {
 
      <SetupField label="Склад">
       <div
-       className="inline-flex flex-wrap gap-0.5 rounded-lg p-0.5"
-       style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+       className="inline-flex flex-wrap gap-0.5 rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
       >
        {warehouses.map((w) => (
         <button
@@ -472,12 +521,12 @@ export function Inventory() {
           setSelectedWorkshopId(w.id);
           setPartialSelectedIds([]);
          }}
-         className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+         className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
           selectedWorkshopId === w.id
-           ? 'bg-white text-foreground'
+           ? 'bg-white text-foreground shadow-sm'
            : 'text-muted-foreground hover:text-foreground'
          }`}
-         style={selectedWorkshopId === w.id ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } : {}}
+         
         >
          {w.name}
         </button>
@@ -487,8 +536,8 @@ export function Inventory() {
 
      <SetupField label="Тип">
       <div
-       className="inline-flex flex-wrap gap-0.5 rounded-lg p-0.5"
-       style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+       className="inline-flex flex-wrap gap-0.5 rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
       >
        <button
         type="button"
@@ -496,24 +545,24 @@ export function Inventory() {
          setInventoryType('full');
          setPartialSelectedIds([]);
         }}
-        className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+        className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
          inventoryType === 'full'
-          ? 'bg-white text-foreground'
+          ? 'bg-white text-foreground shadow-sm'
           : 'text-muted-foreground hover:text-foreground'
         }`}
-        style={inventoryType === 'full' ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } : {}}
+        
        >
         Полная
        </button>
        <button
         type="button"
         onClick={() => setInventoryType('partial')}
-        className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+        className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
          inventoryType === 'partial'
-          ? 'bg-white text-foreground'
+          ? 'bg-white text-foreground shadow-sm'
           : 'text-muted-foreground hover:text-foreground'
         }`}
-        style={inventoryType === 'partial' ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1)' } : {}}
+        style={inventoryType === 'partial' ? {  } : {}}
        >
         Частичная
        </button>
@@ -523,10 +572,10 @@ export function Inventory() {
      {inventoryType === 'partial' && selectedWorkshopId && (
       <SetupField label="Позиции">
        <div className="space-y-2 max-w-md">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
          Удерживайте Cmd (Mac) или Ctrl (Windows) для нескольких позиций.
         </p>
-        <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 bg-secondary/30">
+        <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5">
          <Search className="w-3.5 h-3.5 text-muted-foreground opacity-40 shrink-0" alt="" />
          <input
           className="bg-transparent text-sm outline-none flex-1 min-w-0"
@@ -603,11 +652,11 @@ export function Inventory() {
       className="flex items-center gap-1.5 text-sm hover:text-foreground transition-colors mb-2"
      >
       <ArrowLeft className="w-4 h-4" />
-      Назад к инвентаризациям
+      Инвентаризации
      </button>
      <h2 className="text-2xl font-bold">Инвентаризация: {selectedSkladName}</h2>
      {movementPeriodHint && (
-      <p className="text-xs text-muted-foreground mt-2 max-w-2xl">{movementPeriodHint}</p>
+      <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{movementPeriodHint}</p>
      )}
     </div>
     <div className="flex gap-2">
@@ -615,7 +664,7 @@ export function Inventory() {
       type="button"
       disabled={saveLines.isPending || postSession.isPending}
       onClick={handlePostCounting}
-      className="inline-flex cursor-pointer items-center justify-center gap-1.5 px-4 py-1.5 text-sm rounded-md text-[#5D4FF1] hover:text-[#4538c4] hover:bg-[#5D4FF1]/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      className="inline-flex cursor-pointer items-center justify-center gap-1.5 px-4 py-1.5 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
      >
       <Check className="w-4 h-4 shrink-0" aria-hidden />
       Провести
@@ -629,18 +678,19 @@ export function Inventory() {
     </div>
    )}
 
-   <table className="w-full table-fixed border-separate border-spacing-0">
-    <thead>
-     <tr className="text-sm font-semibold text-foreground border-b">
-      <th scope="col" className="text-left py-3 px-3 w-[200px]">Наименование</th>
-      <th scope="col" className="text-right py-3 px-3 w-[80px]">Нач. ост.</th>
-      <th scope="col" className="text-right py-3 px-3 w-[80px]">Поступл.</th>
-      <th scope="col" className="text-right py-3 px-3 w-[80px]">Расход</th>
-      <th scope="col" className="text-right py-3 px-3 w-[80px]">Списано</th>
-      <th scope="col" className="text-right py-3 px-3 w-[90px]">План. ост.</th>
-      <th scope="col" className="text-center py-3 px-3 w-[110px]">Факт. ост.</th>
-      <th scope="col" className="text-right py-3 px-3 w-[90px]">Разница</th>
-      <th scope="col" className="text-right py-3 px-3 w-[120px]">Разница, сом</th>
+   <div className="max-w-4xl">
+   <table className="table-fixed border-separate border-spacing-0 w-full">
+    <thead className="sticky top-0 z-10 bg-background">
+     <tr className="text-sm font-medium text-foreground">
+      <th scope="col" className="text-left py-1.5 px-3 w-[200px]">Наименование</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Нач. ост.</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Поступл.</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Расход</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Списано</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[90px]">План. ост.</th>
+      <th scope="col" className="text-center py-1.5 px-3 w-[110px]">Факт. ост.</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[90px]">Разница</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Разница, сом</th>
      </tr>
     </thead>
     <tbody>
@@ -659,37 +709,37 @@ export function Inventory() {
         key={item.id}
         className="group hover:bg-muted/30 transition-colors border-b border-muted/30"
        >
-        <td className="py-2 px-3 min-w-0">
-         <div className="text-sm font-semibold truncate">{item.name}</div>
+        <td className="py-1.5 px-3 min-w-0">
+         <div className="text-sm font-medium truncate">{item.name}</div>
         </td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm">{item.start} {item.unit}</td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm text-blue-600 font-medium">+{item.incoming} {item.unit}</td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm text-amber-600 font-medium">-{item.consumption} {item.unit}</td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm text-red-600 font-medium">-{item.writeoff} {item.unit}</td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm bg-blue-50/50 py-1 rounded">{item.theoretical} {item.unit}</td>
-        <td className="py-2 px-3">
+        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm">{item.start} {item.unit}</td>
+        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm text-blue-600 font-medium">+{item.incoming} {item.unit}</td>
+        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm text-amber-600 font-medium">-{item.consumption} {item.unit}</td>
+        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm text-red-600 font-medium">-{item.writeoff} {item.unit}</td>
+        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm bg-blue-50/50 py-1 rounded">{item.theoretical} {item.unit}</td>
+        <td className="py-1.5 px-3">
           <input
            type="number"
-           className="w-full pl-2 pr-8 py-0.5 border rounded text-sm bg-background text-right tabular-nums outline-none focus:border-primary"
+           className="w-full pl-2 pr-8 py-0.5 border rounded text-sm bg-background text-right tabular-nums whitespace-nowrap outline-none focus:border-primary"
            placeholder="0.00"
            value={item.actual}
            onChange={(e) => handleActualChange(item.id, e.target.value)}
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none">
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
            {item.unit}
           </span>
-         </div>
-         <div
-          className={`pr-2 text-right tabular-nums text-sm ${
+         </td>
+         <td
+          className={`pr-2 text-right tabular-nums whitespace-nowrap text-sm ${
            diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-muted-foreground'
           }`}
          >
           {item.actual === ''
            ? '—'
            : (diff > 0 ? `+${diff.toFixed(3)}` : diff.toFixed(3)) + ` ${item.unit}`}
-         </div>
-         <div
-          className={`pr-6 text-right tabular-nums text-sm ${
+         </td>
+         <td
+          className={`pr-6 text-right tabular-nums whitespace-nowrap text-sm ${
            diffSom < 0 ? 'text-red-600' : diffSom > 0 ? 'text-green-600' : 'text-muted-foreground'
           }`}
          >
@@ -697,9 +747,8 @@ export function Inventory() {
            ? '—'
            : (roundedSom > 0 ? `+${roundedSom.toLocaleString()}` : roundedSom.toLocaleString())}{' '}
           сом
-         </div>
-        </div>
-       </div>
+         </td>
+        </tr>
       );
      })}
      {!countingRowsLoading && countingItems.length === 0 && !countingError && (
@@ -707,6 +756,7 @@ export function Inventory() {
      )}
     </tbody>
    </table>
+   </div>
   </div>
  );
 }

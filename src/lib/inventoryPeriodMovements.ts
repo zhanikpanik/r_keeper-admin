@@ -1,6 +1,31 @@
 import { supabase, VENUE_ID } from '@/lib/supabase';
 import type { AdminInventoryPeriodMovementRow } from '@/types/inventoryMovements';
 
+/** Resolve a workshop UUID to its default warehouse UUID.
+ *  Falls back to workshop_warehouses if default_warehouse_id is null. */
+export async function resolveWorkshopToWarehouseId(
+  workshopId: string
+): Promise<string | null> {
+  if (!workshopId) return null;
+
+  const { data: ws } = await supabase
+    .from('workshops')
+    .select('default_warehouse_id')
+    .eq('id', workshopId)
+    .maybeSingle();
+
+  if (ws?.default_warehouse_id) return ws.default_warehouse_id as string;
+
+  const { data: ww } = await supabase
+    .from('workshop_warehouses')
+    .select('warehouse_id')
+    .eq('workshop_id', workshopId)
+    .limit(1)
+    .maybeSingle();
+
+  return (ww?.warehouse_id as string) ?? null;
+}
+
 export function formatInventoryMovementPeriodHint(pFrom: string, pTo: string): string {
   const a = new Date(pFrom).toLocaleString('ru-RU', {
     day: '2-digit',

@@ -1,10 +1,18 @@
 -- Security/performance cleanup after warehouse alignment.
 
 -- Performance: add missing FK indexes (safe no-op with IF NOT EXISTS).
-CREATE INDEX IF NOT EXISTS idx_cash_transactions_shift ON cash_transactions(shift_id);
-CREATE INDEX IF NOT EXISTS idx_cash_transactions_category ON cash_transactions(category_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_movements_warehouse ON inventory_movements(warehouse_id);
+DO $$
+BEGIN
+  IF to_regclass('public.cash_transactions') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_cash_transactions_shift ON cash_transactions(shift_id);
+    CREATE INDEX IF NOT EXISTS idx_cash_transactions_category ON cash_transactions(category_id);
+  END IF;
+  IF to_regclass('public.inventory_movements') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_movements_warehouse ON inventory_movements(warehouse_id);
+  END IF;
+END
+$$;
 CREATE INDEX IF NOT EXISTS idx_modifier_groups_venue ON modifier_groups(venue_id);
 CREATE INDEX IF NOT EXISTS idx_modifiers_group ON modifiers(modifier_group_id);
 CREATE INDEX IF NOT EXISTS idx_modifiers_ingredient ON modifiers(ingredient_id);
@@ -13,8 +21,16 @@ CREATE INDEX IF NOT EXISTS idx_order_item_modifiers_modifier ON order_item_modif
 CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id);
 CREATE INDEX IF NOT EXISTS idx_payments_venue ON payments(venue_id);
-CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
-CREATE INDEX IF NOT EXISTS idx_products_workshop ON products(workshop_id);
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='products' AND column_name='supplier_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='products' AND column_name='workshop_id') THEN
+    CREATE INDEX IF NOT EXISTS idx_products_workshop ON products(workshop_id);
+  END IF;
+END
+$$;
 CREATE INDEX IF NOT EXISTS idx_recipe_items_product ON recipe_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_items_ingredient ON recipe_items(ingredient_id);
 CREATE INDEX IF NOT EXISTS idx_shifts_cashier ON shifts(cashier_id);

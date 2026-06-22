@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Pencil, Search, X } from 'lucide-react';
 import { supabase, VENUE_ID, ORG_ID } from '@/lib/supabase';
 import { useStaff, useInvalidateStaff } from '@/hooks/useStaffData';
 import type { StaffMember } from '@/hooks/useStaffData';
+import { DeleteButton } from '@/components/ui/DeleteButton';
+import { EditButton } from '@/components/ui/EditButton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SearchInput } from '@/components/ui/SearchInput';
+import { AddButton } from '@/components/ui/ActionButtons';
+
+const generatePin = () => String(Math.floor(1000 + Math.random() * 9000));
 
 const ROLES: { value: StaffMember['role']; label: string }[] = [
  { value: 'owner', label: 'Владелец' },
@@ -18,11 +24,6 @@ const ROLE_LABELS: Record<string, string> = {
  cashier: 'Кассир',
  waiter: 'Официант',
 };
-
-const ROW_ACTION =
-  'opacity-60 group-hover:opacity-100 transition-opacity p-1 cursor-pointer rounded hover:bg-muted/50';
-
-const generatePin = () => String(Math.floor(1000 + Math.random() * 9000));
 
 function formatDate(dateStr: string | null): string {
  if (!dateStr) return '—';
@@ -116,56 +117,43 @@ export function Staff() {
  }
 
  async function handleDelete(id: string) {
-  if (!confirm('Удалить сотрудника?')) return;
   await supabase.from('user_venues').delete().eq('user_id', id).eq('venue_id', VENUE_ID);
   await supabase.from('users').delete().eq('id', id);
   invalidate();
+  toast.success('Сотрудник удалён');
  }
 
  return (
   <div className="p-8">
-   <h2 className="text-2xl font-bold mb-6">Сотрудники</h2>
-
-   {/* Role filter tabs */}
-   <div className="flex items-center gap-1 mb-6">
-    <button
-     onClick={() => setRoleFilter(null)}
-     className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
-      roleFilter === null ? 'bg-foreground text-background' : 'bg-secondary text-foreground hover:bg-[#EFF0F4]'
-     }`}
-    >
-     Все
-    </button>
-    {ROLES.map(r => (
-     <button
-      key={r.value}
-      onClick={() => setRoleFilter(r.value)}
-      className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
-       roleFilter === r.value ? 'bg-foreground text-background' : 'bg-secondary text-foreground hover:bg-[#EFF0F4]'
-      }`}
-     >
-      {r.label}
-     </button>
-    ))}
+   <div className="flex items-center justify-between mb-6">
+    <h2 className="text-2xl font-bold">Сотрудники</h2>
+    <AddButton onClick={() => setShowAddForm(true)} label="Добавить сотрудника" />
    </div>
 
-   {/* Search + Add */}
+   {/* Search + role filter */}
    <div className="flex items-center gap-2 mb-4">
-    <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-56">
-     <Search className="w-4 h-4 text-muted-foreground opacity-40" />
-     <input
-      className="bg-transparent text-sm outline-none flex-1"
-      placeholder="Поиск по имени, email, PIN"
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-     />
+    <SearchInput value={search} onChange={setSearch} placeholder="Поиск по имени, эл. почте, PIN" className="w-56" />
+    <div className="inline-flex rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
+     <button
+      onClick={() => setRoleFilter(null)}
+      className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+       roleFilter === null ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+      }`}
+     >
+      Все
+     </button>
+     {ROLES.map(r => (
+      <button
+       key={r.value}
+       onClick={() => setRoleFilter(r.value)}
+       className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+        roleFilter === r.value ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+       }`}
+      >
+       {r.label}
+      </button>
+     ))}
     </div>
-    <button
-     onClick={() => setShowAddForm(true)}
-     className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm cursor-pointer hover:bg-green-700 transition-colors"
-    >
-     + Добавить
-    </button>
    </div>
 
    {/* Add form */}
@@ -173,7 +161,7 @@ export function Staff() {
     <div className="flex gap-3 items-end py-3 border-b">
      <div className="flex-1">
       <input
-       className="w-full px-3 py-2 border rounded-lg text-sm bg-background"
+       className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background"
        value={newStaff.name}
        onChange={(e) => setNewStaff(p => ({ ...p, name: e.target.value }))}
        placeholder="Имя сотрудника"
@@ -183,15 +171,15 @@ export function Staff() {
      </div>
      <div className="w-48">
       <input
-       className="w-full px-3 py-2 border rounded-lg text-sm bg-background"
+       className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background"
        value={newStaff.email}
        onChange={(e) => setNewStaff(p => ({ ...p, email: e.target.value }))}
-       placeholder="Email"
+       placeholder="Эл. почта"
       />
      </div>
      <div className="w-28">
       <input
-       className="w-full px-3 py-2 border rounded-lg text-sm bg-background font-mono"
+       className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background font-mono"
        value={newStaff.pin}
        onChange={(e) => setNewStaff(p => ({ ...p, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
        placeholder="PIN"
@@ -200,105 +188,99 @@ export function Staff() {
      </div>
      <div className="w-36">
       <select
-       className="w-full px-3 py-2 border rounded-lg text-sm bg-background"
+       className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background"
        value={newStaff.role}
        onChange={(e) => setNewStaff(p => ({ ...p, role: e.target.value as StaffMember['role'] }))}
       >
        {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
       </select>
      </div>
-     <button onClick={handleAdd} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm cursor-pointer font-medium">Сохранить</button>
-     <button onClick={() => { setShowAddForm(false); setNewStaff({ name: '', email: '', pin: generatePin(), role: 'cashier' }); }} className="px-4 py-2 text-sm hover:text-foreground">Отмена</button>
+     <button onClick={handleAdd} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm cursor-pointer font-medium">Добавить</button>
+     <button onClick={() => { setShowAddForm(false); setNewStaff({ name: '', email: '', pin: generatePin(), role: 'cashier' }); }} className="px-4 py-2 text-sm hover:text-foreground">Закрыть</button>
     </div>
    )}
 
-   <table className="table-fixed border-separate border-spacing-0">
-    <thead>
-     <tr className="text-sm font-semibold text-foreground">
-      <th scope="col" className="text-left py-3 px-3 w-[180px]">Имя</th>
-      <th scope="col" className="text-left py-3 px-3 w-[120px]">Должность</th>
-      <th scope="col" className="text-left py-3 px-3 w-[180px]">Email</th>
-      <th scope="col" className="text-center py-3 px-3 w-[96px]">PIN</th>
-      <th scope="col" className="text-center py-3 px-3 w-[140px]">Последний вход</th>
-      <th scope="col" className="w-[80px]" />
+   <div className="max-w-4xl">
+   <table className="table-fixed border-separate border-spacing-0 w-full">
+    <thead className="sticky top-0 z-10 bg-background">
+     <tr className="text-sm font-medium text-foreground">
+      <th scope="col" className="text-left py-1.5 px-3 w-[180px]">Имя</th>
+      <th scope="col" className="text-left py-1.5 px-3 w-[120px]">Должность</th>
+      <th scope="col" className="text-left py-1.5 px-3 w-[180px]">Эл. почта</th>
+      <th scope="col" className="text-center py-1.5 px-3 w-[96px]">PIN</th>
+      <th scope="col" className="text-center py-1.5 px-3 w-[140px]">Последний вход</th>
+      <th scope="col" className="py-1.5 w-[56px]" />
+      <th scope="col" className="py-1.5 w-[56px] pr-3" />
      </tr>
     </thead>
     <tbody>
      {isPending && (
-      <tr><td colSpan={6} className="py-16 text-center text-sm">Загрузка…</td></tr>
+      <tr><td colSpan={7} className="py-16 text-center text-sm">Загрузка…</td></tr>
      )}
      {isError && (
-      <tr><td colSpan={6} className="py-16 text-center text-sm text-destructive">{staffError instanceof Error ? staffError.message : 'Не удалось загрузить'}</td></tr>
+      <tr><td colSpan={7} className="py-16 text-center text-sm text-destructive">{staffError instanceof Error ? staffError.message : 'Не удалось загрузить'}</td></tr>
      )}
      {!isPending && !isError && filtered.map((member) => (
       <tr
        key={member.id}
-       className={`group hover:bg-muted/30 transition-colors ${!member.is_active ? 'opacity-50' : ''}`}
+       className={`group hover:bg-black/[0.03] transition-colors ${!member.is_active ? 'opacity-50' : ''}`}
       >
        {editingId === member.id ? (
         <>
-         <td className="py-2 px-3">
+         <td className="py-1.5 px-3">
           <input className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.name || ''} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} autoFocus onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()} />
          </td>
-         <td className="py-2 px-3">
+         <td className="py-1.5 px-3">
           <select className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.role || 'cashier'} onChange={(e) => setEditData((d) => ({ ...d, role: e.target.value as StaffMember['role'] }))}>
            {ROLES.map((r) => (<option key={r.value} value={r.value}>{r.label}</option>))}
           </select>
          </td>
-         <td className="py-2 px-3">
-          <input className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.email || ''} onChange={(e) => setEditData((d) => ({ ...d, email: e.target.value }))} placeholder="Email" />
+         <td className="py-1.5 px-3">
+          <input className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.email || ''} onChange={(e) => setEditData((d) => ({ ...d, email: e.target.value }))} placeholder="Эл. почта" />
          </td>
-         <td className="py-2 px-3 text-center">
+         <td className="py-1.5 px-3 text-center">
           <input className="w-full max-w-[5.5rem] px-2 py-1 border rounded text-sm bg-background font-mono text-center" value={editData.pin || ''} onChange={(e) => setEditData((d) => ({ ...d, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))} maxLength={4} />
          </td>
-         <td className="py-2 px-3" />
-         <td className="py-2 px-3">
+         <td className="py-1.5 px-3" />
+         <td className="py-1.5 px-3">
           <div className="flex justify-end gap-1">
-           <button type="button" onClick={handleSaveEdit} className="text-sm text-green-600 font-semibold px-2 py-1">✓</button>
+           <button type="button" onClick={handleSaveEdit} className="text-sm text-green-600 font-medium px-2 py-1">✓</button>
            <button type="button" onClick={() => { setEditingId(null); setEditData({}); }} className="text-sm px-2 py-1">✕</button>
           </div>
          </td>
+         <td className="py-1.5 pr-4" />
         </>
        ) : (
         <>
-         <td className="py-2 px-3 text-sm truncate">{member.name}</td>
-         <td className="py-2 px-3 text-sm">{ROLE_LABELS[member.role] ?? member.role}</td>
-         <td className="py-2 px-3 text-sm truncate">{member.email || '—'}</td>
-         <td className="py-2 px-3 text-center font-mono text-sm">
+         <td className="py-1.5 px-3 text-sm truncate">{member.name}</td>
+         <td className="py-1.5 px-3 text-sm whitespace-nowrap">{ROLE_LABELS[member.role] ?? member.role}</td>
+         <td className="py-1.5 px-3 text-sm truncate">{member.email || '—'}</td>
+         <td className="py-1.5 px-3 text-center font-mono text-sm">
           <span className="px-2 py-0.5 rounded select-none cursor-default" style={{ filter: 'blur(7px)', transition: '0.1s' }} onMouseEnter={(e) => { e.currentTarget.style.filter = 'blur(0)'; }} onMouseLeave={(e) => { e.currentTarget.style.filter = 'blur(7px)'; }}>{member.pin}</span>
          </td>
-         <td className="py-2 px-3 text-center text-sm tabular-nums">{formatDate(member.last_session_at)}</td>
-         <td className="py-2 px-3">
-          <div className="flex justify-end gap-1">
-           <button type="button" onClick={() => startEdit(member)} className={ROW_ACTION} title="Редактировать">
-            <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-           </button>
-           <button type="button" onClick={() => handleDelete(member.id)} className={ROW_ACTION} title="Удалить">
-            <X className="w-4 h-4 text-muted-foreground hover:text-red-600" />
-           </button>
-          </div>
+         <td className="py-1.5 px-3 text-center text-sm tabular-nums whitespace-nowrap">{formatDate(member.last_session_at)}</td>
+         <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
+          <EditButton onClick={() => startEdit(member)} />
+         </td>
+         <td className="py-1.5 pr-4 opacity-40 group-hover:opacity-100 transition-opacity">
+          <DeleteButton variant="row" onClick={() => handleDelete(member.id)} />
          </td>
         </>
        )}
       </tr>
      ))}
      {showEmptyList && (
-      <tr><td colSpan={6} className="py-16 text-center">
-       <p className="text-sm font-medium mb-1">
-        {search.trim() || roleFilter ? 'Ничего не найдено' : 'Сотрудников пока нет'}
-       </p>
-       <p className="text-xs text-muted-foreground mb-4">
-        {search.trim() || roleFilter ? 'Попробуйте изменить фильтры' : 'Добавьте сотрудников, чтобы они могли работать с POS-терминалом'}
-       </p>
-       {!search.trim() && !roleFilter && (
-        <button onClick={() => setShowAddForm(true)} className="text-sm text-primary hover:underline">
-          Добавить сотрудника →
-        </button>
-       )}
+      <tr><td colSpan={7}>
+       <EmptyState
+        title={search.trim() || roleFilter ? 'Ничего не найдено' : 'Сотрудников пока нет'}
+        hint={search.trim() || roleFilter ? 'Попробуйте изменить фильтры' : 'Добавьте сотрудников, чтобы они могли работать с POS-терминалом'}
+        action={!search.trim() && !roleFilter ? { label: 'Добавить сотрудника', onClick: () => setShowAddForm(true) } : undefined}
+       />
       </td></tr>
      )}
     </tbody>
    </table>
+   </div>
   </div>
  );
 }

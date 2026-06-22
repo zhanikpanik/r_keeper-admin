@@ -36,11 +36,13 @@ $$;
 
 -- Warehouse deliveries
 DROP POLICY IF EXISTS "warehouse_deliveries_all" ON warehouse_deliveries;
+DROP POLICY IF EXISTS "warehouse_deliveries_venue" ON warehouse_deliveries;
 CREATE POLICY "warehouse_deliveries_venue" ON warehouse_deliveries
   FOR ALL USING (public.user_has_venue_access(venue_id))
   WITH CHECK (public.user_has_venue_access(venue_id));
 
 DROP POLICY IF EXISTS "warehouse_delivery_items_all" ON warehouse_delivery_items;
+DROP POLICY IF EXISTS "warehouse_delivery_items_venue" ON warehouse_delivery_items;
 CREATE POLICY "warehouse_delivery_items_venue" ON warehouse_delivery_items
   FOR ALL USING (
     EXISTS (SELECT 1 FROM warehouse_deliveries wd WHERE wd.id = delivery_id AND public.user_has_venue_access(wd.venue_id))
@@ -51,11 +53,13 @@ CREATE POLICY "warehouse_delivery_items_venue" ON warehouse_delivery_items
 
 -- Warehouse write-offs
 DROP POLICY IF EXISTS "warehouse_write_offs_all" ON warehouse_write_offs;
+DROP POLICY IF EXISTS "warehouse_write_offs_venue" ON warehouse_write_offs;
 CREATE POLICY "warehouse_write_offs_venue" ON warehouse_write_offs
   FOR ALL USING (public.user_has_venue_access(venue_id))
   WITH CHECK (public.user_has_venue_access(venue_id));
 
 DROP POLICY IF EXISTS "warehouse_write_off_items_all" ON warehouse_write_off_items;
+DROP POLICY IF EXISTS "warehouse_write_off_items_venue" ON warehouse_write_off_items;
 CREATE POLICY "warehouse_write_off_items_venue" ON warehouse_write_off_items
   FOR ALL USING (
     EXISTS (SELECT 1 FROM warehouse_write_offs wo WHERE wo.id = write_off_id AND public.user_has_venue_access(wo.venue_id))
@@ -66,11 +70,13 @@ CREATE POLICY "warehouse_write_off_items_venue" ON warehouse_write_off_items
 
 -- Warehouse inventory
 DROP POLICY IF EXISTS "warehouse_inventory_sessions_all" ON warehouse_inventory_sessions;
+DROP POLICY IF EXISTS "warehouse_inventory_sessions_venue" ON warehouse_inventory_sessions;
 CREATE POLICY "warehouse_inventory_sessions_venue" ON warehouse_inventory_sessions
   FOR ALL USING (public.user_has_venue_access(venue_id))
   WITH CHECK (public.user_has_venue_access(venue_id));
 
 DROP POLICY IF EXISTS "warehouse_inventory_lines_all" ON warehouse_inventory_lines;
+DROP POLICY IF EXISTS "warehouse_inventory_lines_venue" ON warehouse_inventory_lines;
 CREATE POLICY "warehouse_inventory_lines_venue" ON warehouse_inventory_lines
   FOR ALL USING (
     EXISTS (SELECT 1 FROM warehouse_inventory_sessions s WHERE s.id = session_id AND public.user_has_venue_access(s.venue_id))
@@ -81,6 +87,7 @@ CREATE POLICY "warehouse_inventory_lines_venue" ON warehouse_inventory_lines
 
 -- Venues
 DROP POLICY IF EXISTS "venues_all" ON venues;
+DROP POLICY IF EXISTS "venues_venue" ON venues;
 CREATE POLICY "venues_venue" ON venues
   FOR ALL USING (public.user_has_venue_access(id))
   WITH CHECK (public.user_has_venue_access(id));

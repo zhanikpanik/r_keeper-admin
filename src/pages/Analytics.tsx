@@ -39,12 +39,12 @@ export function AnalyticsPage() {
   const { data: topItems, isPending: topPending } = useTopItems(start, queryEnd);
 
   return (
-    <div className="p-6">
+    <div className="p-8">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h2 className="text-xl font-bold mb-1">Аналитика</h2>
-          <p className="text-[13px] text-muted-foreground">Alto Coffee Bishkek</p>
+          <h2 className="text-2xl font-bold mb-1">Аналитика</h2>
+          <p className="text-sm text-muted-foreground">Alto Coffee Bishkek</p>
         </div>
         <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e); }} />
       </div>

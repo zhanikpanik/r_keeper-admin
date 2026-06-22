@@ -63,11 +63,11 @@ export function Import() {
 
    {preview && (
     <div className="mt-8 overflow-x-auto border rounded-lg">
-     <table className="w-full text-sm">
-      <thead>
+     <table className="table-fixed border-separate border-spacing-0 w-full">
+      <thead className="sticky top-0 z-10 bg-background">
        <tr className="bg-muted/50">
         {preview.headers.map((h, i) => (
-         <th key={i} className="text-left p-2 font-semibold border-b">
+         <th key={i} className="text-left py-1.5 px-3 font-semibold">
           {h || `Col ${i + 1}`}
          </th>
         ))}
@@ -77,7 +77,7 @@ export function Import() {
        {preview.rows.map((row, ri) => (
         <tr key={ri} className="even:bg-muted/20">
          {preview.headers.map((_, ci) => (
-          <td key={ci} className="p-2 border-b border-muted/50">
+          <td key={ci} className="py-1.5 px-3">
            {row[ci] ?? ''}
           </td>
          ))}

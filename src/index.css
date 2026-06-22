@@ -23,6 +23,12 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -52,6 +58,10 @@
   --radius: 0.5rem;
   --success: 145 63% 42%;
   --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 26 83% 14%;
+  --info: 217 91% 60%;
+  --info-foreground: 224 71% 4%;
 }
 
 .dark {
@@ -76,6 +86,10 @@
   --ring: 247 82% 61%;
   --success: 145 63% 42%;
   --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 26 83% 14%;
+  --info: 217 91% 60%;
+  --info-foreground: 224 71% 4%;
 }
 
 @layer base {
@@ -87,5 +101,15 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Onest', system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  button {
+    cursor: pointer;
+    line-height: 1.25;
+  }
+  button:active:not(:disabled) {
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
 }

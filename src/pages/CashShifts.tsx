@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Printer, ChevronDown, Plus } from 'lucide-react';
-import { Modal } from '@/components/ui/Modal';
 import { DeleteButton } from '@/components/ui/DeleteButton';
+import { EditButton } from '@/components/ui/EditButton';
+import { Modal } from '@/components/ui/Modal';
 import { toast } from 'sonner';
 import {
  useShiftTransactions,
@@ -49,6 +50,24 @@ const TYPE_LABELS: Record<TransactionType, string> = {
  collection: 'Инкассация',
  other: 'Прочее',
 };
+
+const NOTE_LABELS: Record<string, string> = {
+ payment_insert: 'Внесение наличных',
+ float_in: 'Приход',
+ float_out: 'Расход',
+ sale: 'Продажа',
+ refund: 'Возврат',
+ opening_balance: 'Открытие смены',
+ closing_balance: 'Закрытие смены',
+ backfill_from_payments: 'Синхронизация платежей',
+ backfill_refund_from_payments: 'Синхронизация возвратов',
+};
+
+function humanizeNote(note: string | null | undefined): string {
+ if (!note) return '';
+ const trimmed = note.trim();
+ return NOTE_LABELS[trimmed] || trimmed.replace(/_/g, ' ');
+}
 
 const TYPE_COLOR: Record<TransactionType, string> = {
  income: 'text-green-600',
@@ -114,7 +133,7 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
 
     {/* Type */}
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Тип</label>
+     <label className="text-sm text-foreground mb-2 block">Тип</label>
      <div
       className="inline-flex rounded-lg p-0.5"
       style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
@@ -138,7 +157,7 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
 
     {/* Amount */}
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Сумма</label>
+     <label className="text-sm text-foreground mb-2 block">Сумма</label>
      <div className="relative">
       <input
        type="number"
@@ -148,15 +167,15 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
        onChange={(e) => { setAmount(e.target.value); setError(''); }}
        autoFocus
       />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">сом</span>
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">сом</span>
      </div>
-     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+     {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
     </div>
 
     {/* Category (income/expense only) */}
     {type !== 'collection' && categories.length > 0 && (
      <div className="mb-4">
-      <label className="text-xs text-foreground mb-2 block">Категория</label>
+      <label className="text-sm text-foreground mb-2 block">Категория</label>
       <select
        className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
        value={categoryId ?? ''}
@@ -172,7 +191,7 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
 
     {/* Datetime */}
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Дата и время</label>
+     <label className="text-sm text-foreground mb-2 block">Дата и время</label>
      <div className="flex gap-2">
       <input
        type="date"
@@ -208,16 +227,16 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
       const sid = matchShiftIdForTimestamp(new Date(datetime).toISOString(), shifts);
       const s = shifts.find(x => x.id === sid);
       return sid ? (
-       <p className="text-xs text-green-700 mt-1 font-medium">→ Смена ({s?.openTime})</p>
+       <p className="text-sm text-green-700 mt-1 font-medium">→ Смена ({s?.openTime})</p>
       ) : (
-       <p className="text-xs text-amber-600 mt-1">Не попадает ни в одну смену</p>
+       <p className="text-sm text-amber-600 mt-1">Не попадает ни в одну смену</p>
       );
      })()}
     </div>
 
     {/* Note */}
     <div className="mb-6">
-     <label className="text-xs text-foreground mb-2 block">Комментарий</label>
+     <label className="text-sm text-foreground mb-2 block">Комментарий</label>
      <input
       type="text"
       className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
@@ -320,13 +339,13 @@ function ShiftBoundaryEditModal({
  return (
   <Modal title={title} onClose={onClose}>
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">
+     <label className="text-sm text-foreground mb-2 block">
       {mode === 'open' ? 'Наличные в кассе' : 'Наличные при закрытии'}
      </label>
      <DecimalSuffixInput value={amountStr} onChange={setAmountStr} suffix="с" />
     </div>
     <div className="mb-6">
-     <label className="text-xs text-foreground mb-2 block">Комментарий кассира</label>
+     <label className="text-sm text-foreground mb-2 block">Комментарий кассира</label>
      <textarea
       rows={3}
       className="w-full px-3 py-2 border rounded-lg text-sm bg-background resize-none outline-none focus:border-primary transition-colors"
@@ -396,7 +415,7 @@ function ShiftDetail({ shift, onAddTransaction }: { shift: CashShift; onAddTrans
  const showTxTable = !txsPending && !txsError;
 
  return (
-  <div className="pl-3 pr-3 py-6 border-t border-b border-muted/20">
+  <div>
    {boundaryEdit && (
     <ShiftBoundaryEditModal
      mode={boundaryEdit}
@@ -407,43 +426,9 @@ function ShiftDetail({ shift, onAddTransaction }: { shift: CashShift; onAddTrans
    {editTx && (
     <EditTransactionModal tx={editTx} onClose={() => setEditTx(null)} />
    )}
-   {/* Summary */}
-   <div className="mb-6 max-w-[360px]">
-    <div className="space-y-1.5">
-     <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-[#9b9a97]">Баланс</span>
-      <span className="text-sm tabular-nums">{formatCurrency(shift.startBalance)}</span>
-     </div>
-     <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-[#9b9a97]">Ожидаемо в кассе</span>
-      <span className="text-sm tabular-nums">{formatCurrency(shift.expectedCash)}</span>
-     </div>
-    </div>
-    <div className="my-3 border-t border-[#F0EFED]" />
-    <div className="space-y-1.5">
-     <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-[#9b9a97]">Приход</span>
-      <span className="text-sm tabular-nums text-green-600">{formatCurrency(totalIncome)}</span>
-     </div>
-     <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-[#9b9a97]">Расход</span>
-      <span className="text-sm tabular-nums text-red-600">{formatCurrency(totalExpense)}</span>
-     </div>
-     <div className="flex items-center justify-between py-1">
-      <span className="text-sm text-[#9b9a97]">Инкассация</span>
-      <span className="text-sm tabular-nums">{formatCurrency(totalCollection)}</span>
-     </div>
-    </div>
-   </div>
 
    {/* Transactions */}
    <div className="max-w-[800px]">
-    <button
-     onClick={() => onAddTransaction(defaultDt)}
-     className="flex items-center gap-1 text-primary hover:text-primary/70 text-sm mb-3 transition-colors cursor-pointer"
-    >
-     <Plus className="w-4 h-4" /> Добавить транзакцию
-    </button>
 
     {txsPending && (
      <p className="text-sm text-muted-foreground py-2">Загрузка…</p>
@@ -455,60 +440,46 @@ function ShiftDetail({ shift, onAddTransaction }: { shift: CashShift; onAddTrans
     )}
 
     {showTxTable && (
-     <div className="overflow-hidden rounded-lg border border-muted/20">
-      <div className="flex items-center px-4 py-2 text-[12px] text-foreground bg-muted/5">
-       <div className="w-[160px] shrink-0">Тип</div>
-       <div className="w-[160px] shrink-0">Дата/время</div>
-       <div className="w-[140px] shrink-0 text-right">Сумма</div>
-       <div className="flex-1">Комментарий</div>
-       <div className="w-[80px] shrink-0 text-right" />
-       <div className="w-[36px] shrink-0" />
+     <div>
+      <div className="flex items-center py-1.5 text-sm text-muted-foreground">
+       <div className="flex-1 min-w-0 max-w-[260px]">Тип</div>
+       <div className="w-[150px] shrink-0">Дата/время</div>
+       <div className="w-[120px] shrink-0 text-right">Сумма</div>
+       <div className="w-[40px] shrink-0" />
+       <div className="w-[40px] shrink-0" />
       </div>
       <div>
-       <div className="group flex items-center px-4 py-2 text-sm hover:bg-muted/5 transition-colors">
-        <div className="w-[160px] shrink-0 text-sky-800">Открытие</div>
-        <div className="w-[160px] shrink-0">{formatDatetime(shift.openIso)}</div>
-        <div className="w-[140px] shrink-0 text-right tabular-nums text-foreground">
+       <div className="group flex items-center py-1.5 text-sm hover:bg-black/[0.03] transition-colors">
+        <div className="flex-1 min-w-0 truncate max-w-[260px] font-medium">Открытие{shift.openingNote?.trim() ? ` · ${humanizeNote(shift.openingNote)}` : ''}</div>
+        <div className="w-[150px] shrink-0">{formatDatetime(shift.openIso)}</div>
+        <div className="w-[120px] shrink-0 text-right tabular-nums text-foreground">
          {formatCurrency(shift.startBalance)}
         </div>
-        <div className="flex-1 truncate text-sm">
-         {shift.openingNote?.trim() ? shift.openingNote : '—'}
+        <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
+         <EditButton onClick={() => setBoundaryEdit('open')} />
         </div>
-        <div className="w-[80px] shrink-0 flex justify-end">
-         <button
-          type="button"
-          onClick={() => setBoundaryEdit('open')}
-          className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer"
-         >
-          Изменить
-         </button>
-        </div>
-        <div className="w-[36px] shrink-0" />
+        <div className="w-[40px] shrink-0" />
        </div>
 
        {txsChrono.map((tx) => (
-        <div key={tx.id} className="group flex items-center px-4 py-2 text-sm hover:bg-muted/5 transition-colors">
-         <div className="w-[160px] shrink-0">
-          <span className="">{TYPE_LABELS[tx.type]}</span>
+        <div key={tx.id} className="group flex items-center py-1.5 text-sm hover:bg-black/[0.03] transition-colors">
+         <div className="flex-1 min-w-0 truncate max-w-[260px]">
+          <span>{TYPE_LABELS[tx.type]}</span>
           {tx.category_id && catMap[tx.category_id] && (
-           <span className="block text-xs truncate">{catMap[tx.category_id]}</span>
+           <span className="text-muted-foreground"> · {catMap[tx.category_id]}</span>
+          )}
+          {tx.note?.trim() && (
+           <span className="text-muted-foreground"> · {humanizeNote(tx.note)}</span>
           )}
          </div>
-         <div className="w-[160px] shrink-0">{formatDatetime(tx.transaction_at)}</div>
-         <div className={`w-[140px] shrink-0 text-right tabular-nums ${TYPE_AMOUNT_COLOR[tx.type]}`}>
+         <div className="w-[150px] shrink-0">{formatDatetime(tx.transaction_at)}</div>
+         <div className={`w-[120px] shrink-0 text-right tabular-nums ${TYPE_AMOUNT_COLOR[tx.type]}`}>
           {formatCurrency(tx.amount)}
          </div>
-         <div className="flex-1 truncate">{tx.note || '—'}</div>
-         <div className="w-[80px] shrink-0 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-           type="button"
-           onClick={() => setEditTx(tx)}
-           className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer"
-          >
-           Изменить
-          </button>
+         <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
+          <EditButton onClick={() => setEditTx(tx)} />
          </div>
-         <div className="w-[36px] shrink-0 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+         <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
           <DeleteButton onClick={async () => {
            try { await deleteTx.mutateAsync(tx.id); }
            catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Не удалось удалить'); }
@@ -518,30 +489,36 @@ function ShiftDetail({ shift, onAddTransaction }: { shift: CashShift; onAddTrans
        ))}
 
        {shift.closeIso && (
-        <div className="group flex items-center px-4 py-2 text-sm hover:bg-muted/5 transition-colors">
-         <div className="w-[160px] shrink-0 text-violet-900">Закрытие</div>
-         <div className="w-[160px] shrink-0">{formatDatetime(shift.closeIso)}</div>
-         <div className="w-[140px] shrink-0 text-right tabular-nums text-foreground">
+        <div className="group flex items-center py-1.5 text-sm hover:bg-black/[0.03] transition-colors">
+         <div className="flex-1 min-w-0 truncate max-w-[260px] font-medium">Закрытие{shift.closingNote?.trim() ? ` · ${humanizeNote(shift.closingNote)}` : ''}</div>
+         <div className="w-[150px] shrink-0">{formatDatetime(shift.closeIso)}</div>
+         <div className="w-[120px] shrink-0 text-right tabular-nums text-foreground">
           {shift.closingCashCount != null ? formatCurrency(shift.closingCashCount) : '—'}
          </div>
-         <div className="flex-1 truncate text-sm">
-          {shift.closingNote?.trim() ? shift.closingNote : '—'}
+         <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
+          <EditButton onClick={() => setBoundaryEdit('close')} />
          </div>
-         <div className="w-[80px] shrink-0 flex justify-end">
-          <button
-           type="button"
-           onClick={() => setBoundaryEdit('close')}
-           className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer"
-          >
-           Изменить
-          </button>
-         </div>
-         <div className="w-[36px] shrink-0" />
+         <div className="w-[40px] shrink-0" />
         </div>
        )}
       </div>
      </div>
     )}
+   </div>
+
+   <button
+    onClick={() => onAddTransaction(defaultDt)}
+    className="flex items-center gap-1.5 text-sm text-primary hover:underline transition-colors cursor-pointer mt-1 mb-3"
+   >
+    <Plus className="w-3.5 h-3.5" /> Добавить транзакцию
+   </button>
+
+   <div className="flex items-center gap-3 py-1 text-sm">
+    <span className="tabular-nums text-green-600">+{formatCurrency(totalIncome)} приход</span>
+    <span className="tabular-nums text-red-600">−{formatCurrency(totalExpense)} расход</span>
+    {totalCollection > 0 && <span className="tabular-nums">−{formatCurrency(totalCollection)} инкассация</span>}
+    <span className="text-muted-foreground">→</span>
+    <span className="tabular-nums font-medium">{formatCurrency(shift.expectedCash)} в кассе</span>
    </div>
   </div>
  );
@@ -600,7 +577,7 @@ export function EditTransactionModal({
   <Modal title="Изменить транзакцию" onClose={onClose}>
 
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Тип</label>
+     <label className="text-sm text-foreground mb-2 block">Тип</label>
      <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}>
       {(['expense', 'income'] as const).map((t) => (
        <button key={t} onClick={() => { setType(t); setCategoryId(''); }}
@@ -614,18 +591,18 @@ export function EditTransactionModal({
     </div>
 
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Сумма</label>
+     <label className="text-sm text-foreground mb-2 block">Сумма</label>
      <div className="relative">
       <input type="number" className="w-full px-3 py-2 border rounded-lg text-sm bg-background pr-10 outline-none focus:border-primary transition-colors"
        placeholder="0" value={amount} onChange={(e) => { setAmount(e.target.value); setError(''); }} autoFocus />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">сом</span>
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">сом</span>
      </div>
-     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+     {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
     </div>
 
     {type !== 'collection' && categories.length > 0 && (
      <div className="mb-4">
-      <label className="text-xs text-foreground mb-2 block">Категория</label>
+      <label className="text-sm text-foreground mb-2 block">Категория</label>
       <select className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
        value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
        <option value="">Без категории</option>
@@ -635,7 +612,7 @@ export function EditTransactionModal({
     )}
 
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Дата и время</label>
+     <label className="text-sm text-foreground mb-2 block">Дата и время</label>
      <div className="flex gap-2">
       <input type="date" className="flex-1 px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
        value={datetime.slice(0, 10)} onChange={(e) => setDatetime(e.target.value + 'T' + (datetime.slice(11) || '00:00'))} />
@@ -652,20 +629,20 @@ export function EditTransactionModal({
     </div>
 
     <div className="mb-6">
-     <label className="text-xs text-foreground mb-2 block">Комментарий</label>
+     <label className="text-sm text-foreground mb-2 block">Комментарий</label>
      <input type="text" className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
       placeholder="Комментарий" value={note} onChange={(e) => setNote(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && handleSave()} />
     </div>
 
-    <div className="flex gap-2">
-     <button onClick={handleSave} disabled={updateTx.isPending}
-      className="flex-1 py-2.5 bg-foreground text-background rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50">
-      {updateTx.isPending ? 'Сохранение...' : 'Обновить'}
-     </button>
+    <div className="flex gap-2 justify-end">
      <button onClick={onClose}
-      className="px-5 py-2.5 border-2 rounded-xl font-bold text-sm hover:bg-secondary transition-colors">
-      Отмена
+      className="px-5 py-2.5 border rounded-lg bg-background text-sm font-medium hover:bg-secondary transition-colors">
+      Закрыть
+     </button>
+     <button onClick={handleSave} disabled={updateTx.isPending}
+      className="px-8 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-all disabled:opacity-50 active:shadow-[inset_0_1px_3px_rgba(0,0,0,.2)]">
+      {updateTx.isPending ? 'Сохранение...' : 'Обновить'}
      </button>
     </div>
   </Modal>
@@ -710,7 +687,7 @@ export function CashShifts() {
    )}
 
    {isError && (
-    <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+    <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-1.5 text-sm text-destructive">
      {error instanceof Error ? error.message : 'Не удалось загрузить смены'}
     </div>
    )}
@@ -729,15 +706,16 @@ export function CashShifts() {
     </div>
    </div>
 
+   <div className="max-w-4xl">
    <table className="w-full table-fixed border-separate border-spacing-0">
     <thead>
-     <tr className="text-sm font-semibold text-foreground">
-      <th scope="col" className="text-left py-3 px-3 w-[280px]">Смена</th>
-      <th scope="col" className="text-right py-3 px-3 w-[120px]">Начало</th>
-      <th scope="col" className="text-right py-3 px-3 w-[120px]">В кассе</th>
-      <th scope="col" className="text-right py-3 px-3 w-[120px]">Разница</th>
-      <th scope="col" className="text-right py-3 px-3 w-[120px]">Инкассация</th>
-      <th scope="col" className="w-[40px]" />
+     <tr className="text-sm font-medium text-foreground">
+      <th scope="col" className="text-left py-1.5 px-3 w-[280px]">Смена</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Начало</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">В кассе</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Разница</th>
+      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Инкассация</th>
+      <th scope="col" className="py-1.5 w-[40px]" />
      </tr>
     </thead>
     <tbody>
@@ -751,13 +729,13 @@ export function CashShifts() {
       const isExpanded = expandedId === shift.id;
       let rowClass = 'cursor-pointer ';
       if (isExpanded) {
-       rowClass += 'bg-[#FAFAFA] ';
+       rowClass += 'bg-black/[0.03] ';
       } else if (!shift.closeTime) {
        rowClass += 'bg-[#FDF6E3] hover:bg-[#F9EED4] ';
       } else if (shift.difference != null && shift.difference !== 0) {
        rowClass += 'bg-[#FCE8E8] hover:bg-[#FAD5D5] ';
       } else {
-       rowClass += (idx % 2 === 1 ? 'bg-muted/10 ' : '') + 'hover:bg-[#EFF0F4] ';
+       rowClass += (idx % 2 === 1 ? 'bg-muted/10 ' : '') + 'hover:bg-black/[0.03] ';
       }
 
       return (
@@ -814,8 +792,8 @@ export function CashShifts() {
         <td />
        </tr>
        {isExpanded && (
-        <tr key={`${shift.id}-detail`} className="bg-[#FAFAFA]">
-         <td colSpan={6} className="pb-4 pt-0 pl-6">
+        <tr key={`${shift.id}-detail`} className="bg-black/[0.03]">
+         <td colSpan={6} className="py-1.5 pl-8 pr-3">
           <ShiftDetail shift={shift} onAddTransaction={openModal} />
          </td>
         </tr>
@@ -825,6 +803,7 @@ export function CashShifts() {
      })}
     </tbody>
    </table>
+   </div>
   </div>
  );
 }

@@ -95,12 +95,3 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
   return { revenue, revenueYesterday, expenses, expensesYesterday, stockAlerts, recentTransactions };
 }
-
-export function useDashboardStats() {
-  return useQuery({
-    queryKey: ['dashboard_stats', VENUE_ID],
-    queryFn: fetchDashboardStats,
-    // 2 min: dashboard is the landing page, viewed constantly
-    staleTime: 2 * 60 * 1000,
-  });
-}

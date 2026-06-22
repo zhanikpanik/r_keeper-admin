@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, MoreHorizontal, Plus, Search } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWarehouses, useWarehouseIngredients } from '@/hooks/useMenuData';
 import {
@@ -12,9 +12,10 @@ import {
   useWarehouseInventorySessions,
 } from '@/hooks/useWarehouse';
 import { somRounded } from '@/lib/formatSom';
-
-const ROW_ACTION =
-  'opacity-60 group-hover:opacity-100 transition-opacity p-2.5 cursor-pointer hover:bg-accent';
+import { Badge } from '@/components/ui/Badge';
+import { SearchInput } from '@/components/ui/SearchInput';
+import { AddButton } from '@/components/ui/ActionButtons';
+import { EditButton } from '@/components/ui/EditButton';
 
 function getPositionPlural(count: number) {
   const n = Math.abs(count) % 100;
@@ -27,7 +28,6 @@ function getPositionPlural(count: number) {
 
 const RECENT_COUNT = 5;
 
-/** Unified row for the recent-operations table */
 interface RecentOp {
   id: string;
   date: string;
@@ -47,12 +47,10 @@ const TYPE_STYLE: Record<RecentOp['type'], { label: string; cls: string }> = {
   'inventory': { label: 'Инвентаризация',cls: 'text-emerald-700 bg-emerald-50' },
 };
 
-function statusBadge(status: string) {
-  if (status === 'Принято' || status === 'Проведено') return 'text-green-600 bg-green-50';
-  if (status === 'В пути') return 'text-blue-600 bg-blue-50';
-  if (status === 'Черновик') return 'text-amber-600 bg-amber-50';
-  if (status === 'Отменено') return 'text-red-600 bg-red-50';
-  return 'text-muted-foreground bg-secondary';
+function statusText(status: string) {
+  if (status === 'Отменено') return 'text-red-600';
+  if (status === 'Черновик') return 'text-amber-600';
+  return 'text-muted-foreground';
 }
 
 export function WarehouseWorkspace() {
@@ -78,59 +76,74 @@ export function WarehouseWorkspace() {
   const { data: transfers = [] } = useWarehouseTransfers();
   const { data: inventories = [] } = useWarehouseInventorySessions();
 
-  // --- Stock table ---
   const q = search.trim().toLowerCase();
   const filtered = q
     ? ingredients.filter((i) => i.name.toLowerCase().includes(q))
     : ingredients;
 
-  const totalValue = filtered.reduce((sum, i) => sum + i.stock_quantity * i.price, 0);
+  const totalValue = useMemo(() => {
+    return filtered.reduce((sum, i) => sum + i.stock_quantity * i.price, 0);
+  }, [filtered]);
 
-  // --- Recent operations ---
-  const recentOps = useMemo<RecentOp[]>(() => {
+  const recentOps: RecentOp[] = useMemo(() => {
     const ops: RecentOp[] = [];
 
-    for (const d of deliveries) {
-      if (d.warehouse_id !== warehouseId) continue;
+    deliveries.filter((d) => d.warehouse_id === warehouseId).forEach((d) => {
       ops.push({
-        id: d.id, date: d.date, type: 'delivery',
-        typeLabel: TYPE_STYLE['delivery'].label, typeClass: TYPE_STYLE['delivery'].cls,
-        details: `${d.supplier || '—'}, ${d.items.length} ${getPositionPlural(d.items.length)}`,
-        status: d.status, statusClass: statusBadge(d.status),
+        id: d.id,
+        date: d.date,
+        type: 'delivery',
+        typeLabel: TYPE_STYLE.delivery.label,
+        typeClass: TYPE_STYLE.delivery.cls,
+        details: `${d.supplier} · ${d.items.length} ${getPositionPlural(d.items.length)}`,
+        status: d.status,
+        statusClass: statusText(d.status),
         amount: d.amount,
       });
-    }
-    for (const w of writeOffs) {
-      if (w.warehouse_id !== warehouseId) continue;
+    });
+
+    writeOffs.filter((w) => w.warehouse_id === warehouseId).forEach((w) => {
       ops.push({
-        id: w.id, date: w.date, type: 'write-off',
-        typeLabel: TYPE_STYLE['write-off'].label, typeClass: TYPE_STYLE['write-off'].cls,
-        details: `${w.reason_summary || '—'}, ${w.items.length} ${getPositionPlural(w.items.length)}`,
-        status: w.status, statusClass: statusBadge(w.status),
+        id: w.id,
+        date: w.date,
+        type: 'write-off',
+        typeLabel: TYPE_STYLE['write-off'].label,
+        typeClass: TYPE_STYLE['write-off'].cls,
+        details: `${w.reason_summary} · ${w.items.length} ${getPositionPlural(w.items.length)}`,
+        status: w.status,
+        statusClass: statusText(w.status),
         amount: null,
       });
-    }
-    for (const t of transfers) {
-      if (t.fromWarehouseId !== warehouseId && t.toWarehouseId !== warehouseId) continue;
-      const dir = t.fromWarehouseId === warehouseId ? `→ ${t.toWarehouse}` : `← ${t.fromWarehouse}`;
+    });
+
+    transfers.filter((t) => t.from_warehouse_id === warehouseId || t.to_warehouse_id === warehouseId).forEach((t) => {
+      const dir = t.from_warehouse_id === warehouseId ? '→' : '←';
       ops.push({
-        id: t.id, date: t.date, type: 'transfer',
-        typeLabel: TYPE_STYLE['transfer'].label, typeClass: TYPE_STYLE['transfer'].cls,
-        details: `${dir}, ${t.items.length} ${getPositionPlural(t.items.length)}`,
-        status: t.status, statusClass: statusBadge(t.status),
+        id: t.id,
+        date: t.date,
+        type: 'transfer',
+        typeLabel: TYPE_STYLE.transfer.label,
+        typeClass: TYPE_STYLE.transfer.cls,
+        details: `${t.from_warehouse_name ?? '—'} ${dir} ${t.to_warehouse_name ?? '—'} · ${t.items.length} ${getPositionPlural(t.items.length)}`,
+        status: t.status,
+        statusClass: statusText(t.status),
         amount: null,
       });
-    }
-    for (const inv of inventories) {
-      if (inv.warehouse_id !== warehouseId) continue;
+    });
+
+    inventories.filter((inv) => inv.warehouse_id === warehouseId).forEach((inv) => {
       ops.push({
-        id: inv.id, date: inv.date, type: 'inventory',
-        typeLabel: TYPE_STYLE['inventory'].label, typeClass: TYPE_STYLE['inventory'].cls,
-        details: `Результат: ${inv.result > 0 ? '+' : ''}${somRounded(inv.result).toLocaleString()} сом`,
-        status: inv.status, statusClass: statusBadge(inv.status),
-        amount: inv.result,
+        id: inv.id,
+        date: inv.date || '',
+        type: 'inventory',
+        typeLabel: TYPE_STYLE.inventory.label,
+        typeClass: TYPE_STYLE.inventory.cls,
+        details: inv.warehouse_name ?? '—',
+        status: inv.status ?? '—',
+        statusClass: statusText(inv.status ?? ''),
+        amount: null,
       });
-    }
+    });
 
     ops.sort((a, b) => b.date.localeCompare(a.date));
     return ops.slice(0, RECENT_COUNT);
@@ -170,29 +183,21 @@ export function WarehouseWorkspace() {
   if (!selected) return null;
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-8">
 
       {/* ═══ HEADER ═══ */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between mb-6">
         <div>
-          <button
-            type="button"
-            onClick={() => navigate('/warehouse/operations')}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            К складам
-          </button>
           <h2 className="text-2xl font-bold">{selected.name}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Остатков на {somRounded(totalValue).toLocaleString()} сом
+            Остатки на {somRounded(totalValue).toLocaleString()} сом
           </p>
         </div>
         <div className="relative">
           <button
             type="button"
             onClick={() => setMenuOpen(!menuOpen)}
-            className="p-2 rounded-md hover:bg-accent transition-colors"
+            className="p-2 rounded-lg hover:bg-accent transition-colors"
           >
             <MoreHorizontal className="w-5 h-5 text-muted-foreground" />
           </button>
@@ -220,178 +225,155 @@ export function WarehouseWorkspace() {
         </div>
       </div>
 
-      {/* ═══ QUICK ACTIONS ═══ */}
-      <div className="flex items-center gap-2">
-        <Link
-          to={`/warehouse/deliveries/new?warehouse=${warehouseId}`}
-          className="inline-flex items-center gap-1.5 px-4 h-9 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/80 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Поставка
-        </Link>
-        <Link
-          to={`/warehouse/write-offs/new?warehouse=${warehouseId}`}
-          className="inline-flex items-center gap-1.5 px-4 h-9 bg-white border border-border rounded-lg text-sm font-semibold text-foreground hover:bg-accent transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Списание
-        </Link>
-        <Link
-          to={`/warehouse/transfers/new?from=${warehouseId}`}
-          className="inline-flex items-center gap-1.5 px-4 h-9 bg-white border border-border rounded-lg text-sm font-semibold text-foreground hover:bg-accent transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Перемещение
-        </Link>
-        <Link
-          to={`/warehouse/inventory?warehouse=${warehouseId}`}
-          className="inline-flex items-center gap-1.5 px-4 h-9 bg-white border border-border rounded-lg text-sm font-semibold text-foreground hover:bg-accent transition-colors"
-        >
-          Инвентаризация
-        </Link>
-      </div>
-
-      {/* ═══ STOCK TABLE ═══ */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-medium">Остатки</h3>
-          <Link
-            to={`/menu/ingredients/add?warehouse=${warehouseId}&back=warehouse`}
-            className="inline-flex items-center gap-1.5 px-3 h-8 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/80 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Добавить
-          </Link>
-        </div>
-
-        <div className="mb-3">
-          <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-56">
-            <Search className="w-3.5 h-3.5 opacity-40 shrink-0" />
-            <input
-              className="bg-transparent text-sm outline-none flex-1"
-              placeholder="Поиск по названию…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="max-w-xl">
-          {/* ColHeader — no divider */}
-          <div className="flex items-center gap-3 py-1 text-sm text-muted-foreground">
-            <span className="flex-1 min-w-0">Наименование</span>
-            <span className="shrink-0 w-[52px] text-right">Ед.</span>
-            <span className="shrink-0 w-[72px] text-right">Остаток</span>
-            <span className="shrink-0 w-[100px] text-right">Стоимость</span>
-          </div>
-
-          {ingPending && (
-            <p className="text-sm text-muted-foreground py-8">Загрузка…</p>
-          )}
-
-          {!ingPending && filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground py-8">
-              {search ? 'Ничего не найдено' : 'На этом складе пока нет ингредиентов'}
-            </p>
-          )}
-
-          {!ingPending && filtered.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-3 py-1.5 text-sm group cursor-pointer hover:bg-accent transition-colors"
-              onClick={() => navigate(`/menu/ingredients/${item.id}?warehouse=${warehouseId}&back=warehouse`)}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  navigate(`/menu/ingredients/${item.id}?warehouse=${warehouseId}&back=warehouse`);
-                }
-              }}
-            >
-              <span className="flex-1 min-w-0 truncate">{item.name}</span>
-              <span className="shrink-0 w-[52px] text-right text-muted-foreground">{item.unit}</span>
-              <span className="shrink-0 w-[72px] text-right tabular-nums">{item.stock_quantity}</span>
-              <span className="shrink-0 w-[100px] text-right tabular-nums font-medium">
-                {somRounded(item.price * item.stock_quantity).toLocaleString()} сом
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ═══ RECENT OPERATIONS ═══ */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
+      {/* ═══ RECENT OPERATIONS (above stock, so they're visible) ═══ */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-3">
           <h3 className="text-base font-medium">Последние операции</h3>
           <Link
-            to={`/warehouse/operations?warehouse=${warehouseId}`}
-            className="text-sm text-primary hover:underline"
+            to="/warehouse/operations"
+            className="text-sm text-muted-foreground hover:text-foreground hover:underline transition-colors"
           >
             Все операции →
           </Link>
         </div>
 
-        <div className="max-w-2xl">
-          {/* ColHeader — no divider */}
-          <div className="flex items-center gap-3 py-1 text-sm text-muted-foreground">
-            <span className="shrink-0 w-[58px]">Дата</span>
-            <span className="shrink-0 w-[100px]">Тип</span>
-            <span className="flex-1 min-w-0">Детали</span>
-            <span className="shrink-0 w-[90px] text-right">Статус</span>
-            <span className="shrink-0 w-[90px] text-right">Сумма</span>
+        {recentOps.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">Операций пока нет</p>
+        ) : (
+          <div className="max-w-2xl">
+            <table className="table-fixed border-separate border-spacing-0 w-full">
+              <thead>
+                <tr className="text-sm font-medium text-foreground">
+                  <th scope="col" className="text-left py-1.5 px-3 w-[60px]">Дата</th>
+                  <th scope="col" className="text-left py-1.5 px-3 w-[120px]">Тип</th>
+                  <th scope="col" className="text-left py-1.5 px-3">Детали</th>
+                  <th scope="col" className="text-right py-1.5 px-3 w-[90px]">Статус</th>
+                  <th scope="col" className="text-right py-1.5 px-3 w-[90px]">Сумма</th>
+                  <th scope="col" className="py-1.5 w-[56px]" />
+                </tr>
+              </thead>
+              <tbody>
+                {recentOps.map((op) => (
+                  <tr
+                    key={`${op.type}-${op.id}`}
+                    className={`group cursor-pointer hover:bg-black/[0.03] transition-colors ${op.status === 'Отменено' ? 'opacity-50' : ''}`}
+                    onClick={() => {
+                      const base = op.type === 'delivery' ? '/warehouse/deliveries'
+                        : op.type === 'write-off' ? '/warehouse/write-offs'
+                        : op.type === 'transfer' ? '/warehouse/transfers'
+                        : '/warehouse/inventory';
+                      navigate(`${base}/${op.id}/edit`);
+                    }}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        const base = op.type === 'delivery' ? '/warehouse/deliveries'
+                          : op.type === 'write-off' ? '/warehouse/write-offs'
+                          : op.type === 'transfer' ? '/warehouse/transfers'
+                          : '/warehouse/inventory';
+                        navigate(`${base}/${op.id}/edit`);
+                      }
+                    }}
+                  >
+                    <td className={`py-1.5 px-3 text-sm text-muted-foreground ${op.status === 'Отменено' ? 'line-through' : ''}`}>
+                      {new Date(op.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                    </td>
+                    <td className="py-1.5 px-3 text-sm">
+                      <Badge className={op.typeClass}>
+                        {op.typeLabel}
+                      </Badge>
+                    </td>
+                    <td className={`py-1.5 px-3 text-sm truncate ${op.status === 'Отменено' ? 'line-through' : ''}`}>
+                      {op.details}
+                    </td>
+                    <td className={`py-1.5 px-3 text-sm text-right font-medium ${op.statusClass}`}>
+                      {op.status}
+                    </td>
+                    <td className={`py-1.5 px-3 text-sm text-right tabular-nums font-medium ${op.status === 'Отменено' ? 'line-through' : ''}`}>
+                      {op.amount != null ? `${op.amount.toLocaleString()} сом` : '—'}
+                    </td>
+                    <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
+                      <EditButton onClick={() => {
+                        const base = op.type === 'delivery' ? '/warehouse/deliveries'
+                          : op.type === 'write-off' ? '/warehouse/write-offs'
+                          : op.type === 'transfer' ? '/warehouse/transfers'
+                          : '/warehouse/inventory';
+                        navigate(`${base}/${op.id}/edit`);
+                      }} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
 
-          {recentOps.length === 0 && (
-            <p className="text-sm text-muted-foreground py-8">Операций пока нет</p>
-          )}
+      {/* ═══ STOCK TABLE ═══ */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-medium">Остатки</h3>
+        </div>
 
-          {recentOps.map((op) => (
-            <div
-              key={`${op.type}-${op.id}`}
-              className={`flex items-center gap-3 py-1.5 text-sm group cursor-pointer hover:bg-accent transition-colors ${
-                op.status === 'Отменено' ? 'opacity-50' : ''
-              }`}
-              onClick={() => {
-                // Navigate to edit/view based on type
-                const base = op.type === 'delivery' ? '/warehouse/deliveries'
-                  : op.type === 'write-off' ? '/warehouse/write-offs'
-                  : op.type === 'transfer' ? '/warehouse/transfers'
-                  : '/warehouse/inventory';
-                navigate(`${base}/${op.id}/edit`);
-              }}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  const base = op.type === 'delivery' ? '/warehouse/deliveries'
-                    : op.type === 'write-off' ? '/warehouse/write-offs'
-                    : op.type === 'transfer' ? '/warehouse/transfers'
-                    : '/warehouse/inventory';
-                  navigate(`${base}/${op.id}/edit`);
-                }
-              }}
-            >
-              <span className={`shrink-0 w-[58px] text-muted-foreground ${op.status === 'Отменено' ? 'line-through' : ''}`}>
-                {new Date(op.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
-              </span>
-              <span className="shrink-0 w-[100px]">
-                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${op.typeClass}`}>
-                  {op.typeLabel}
-                </span>
-              </span>
-              <span className={`flex-1 min-w-0 truncate ${op.status === 'Отменено' ? 'line-through' : ''}`}>
-                {op.details}
-              </span>
-              <span className="shrink-0 w-[90px] text-right">
-                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${op.statusClass}`}>
-                  {op.status}
-                </span>
-              </span>
-              <span className={`shrink-0 w-[90px] text-right tabular-nums font-medium ${op.status === 'Отменено' ? 'line-through' : ''}`}>
-                {op.amount != null ? `${op.amount.toLocaleString()} сом` : '—'}
-              </span>
-            </div>
-          ))}
+        <div className="flex items-center gap-2 mb-4">
+          <SearchInput value={search} onChange={setSearch} placeholder="Поиск по названию…" className="w-56" />
+          <AddButton
+            onClick={() => navigate(`/menu/ingredients/add?warehouse=${warehouseId}&back=warehouse`)}
+            label="Добавить ингредиент"
+          />
+        </div>
+
+        <div className="max-w-2xl">
+          <table className="table-fixed border-separate border-spacing-0 w-full">
+            <thead className="sticky top-0 z-10 bg-background">
+              <tr className="text-sm font-medium text-foreground">
+                <th scope="col" className="text-left py-1.5 px-3">Наименование</th>
+                <th scope="col" className="text-right py-1.5 px-3 w-[100px]">Остаток</th>
+                <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Стоимость</th>
+                <th scope="col" className="py-1.5 w-[56px]" />
+              </tr>
+            </thead>
+            <tbody>
+              {ingPending && (
+                <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground">Загрузка…</td></tr>
+              )}
+
+              {!ingPending && filtered.length === 0 && (
+                <tr><td colSpan={4} className="py-12 text-center text-sm text-muted-foreground">
+                  {search ? 'Ничего не найдено' : 'На этом складе пока нет ингредиентов'}
+                </td></tr>
+              )}
+
+              {!ingPending && filtered.map((item) => (
+                <tr
+                  key={item.id}
+                  className="group cursor-pointer hover:bg-black/[0.03] transition-colors"
+                  onClick={() => navigate(`/menu/ingredients/${item.id}?warehouse=${warehouseId}&back=warehouse`)}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/menu/ingredients/${item.id}?warehouse=${warehouseId}&back=warehouse`);
+                    }
+                  }}
+                >
+                  <td className="py-1.5 px-3 text-sm truncate">{item.name}</td>
+                  <td className="py-1.5 px-3 text-sm text-right tabular-nums">
+                    <span className={item.stock_quantity < 0 ? 'text-red-600' : ''}>
+                      {item.stock_quantity} {item.unit}
+                    </span>
+                  </td>
+                  <td className="py-1.5 px-3 text-sm text-right tabular-nums font-medium">
+                    {somRounded(item.price * item.stock_quantity).toLocaleString()} сом
+                  </td>
+                  <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
+                    <EditButton onClick={() => navigate(`/menu/ingredients/${item.id}?warehouse=${warehouseId}&back=warehouse`)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 

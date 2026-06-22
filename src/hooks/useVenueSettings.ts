@@ -6,6 +6,7 @@ export interface VenueRow {
   name: string | null;
   address: string | null;
   phone: string | null;
+  daily_labor_cost: number | null;
 }
 
 export function useVenue() {
@@ -14,7 +15,7 @@ export function useVenue() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('venues')
-        .select('id, name, address, phone')
+        .select('id, name, address, phone, daily_labor_cost')
         .eq('id', VENUE_ID)
         .maybeSingle();
       if (error) throw error;
@@ -27,7 +28,7 @@ export function useVenue() {
 export function useUpdateVenue() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (patch: Partial<Pick<VenueRow, 'name' | 'address' | 'phone'>>) => {
+    mutationFn: async (patch: Partial<Pick<VenueRow, 'name' | 'address' | 'phone' | 'daily_labor_cost'>>) => {
       const { error } = await supabase.from('venues').update(patch).eq('id', VENUE_ID);
       if (error) throw error;
     },

@@ -44,7 +44,7 @@ export function Login() {
 
     <form onSubmit={handleSubmit} className="space-y-4">
      <div>
-      <label className="text-xs font-medium text-muted-foreground">Email</label>
+      <label className="text-sm font-medium text-muted-foreground">Эл. почта</label>
       <input
        type="email"
        autoComplete="email"
@@ -55,7 +55,7 @@ export function Login() {
       />
      </div>
      <div>
-      <label className="text-xs font-medium text-muted-foreground">Пароль</label>
+      <label className="text-sm font-medium text-muted-foreground">Пароль</label>
       <input
        type="password"
        autoComplete="current-password"
@@ -69,7 +69,7 @@ export function Login() {
      <button
       type="submit"
       disabled={submitting}
-      className="w-full py-2.5 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+      className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
      >
       {submitting ? 'Вход…' : 'Войти'}
      </button>

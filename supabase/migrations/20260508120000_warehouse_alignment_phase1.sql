@@ -28,7 +28,7 @@ ALTER TABLE warehouse_transfers
 
 -- 3) Backfill warehouse_id from workshop_warehouses (1:1 target, first link wins).
 WITH map AS (
-  SELECT ww.workshop_id, MIN(ww.warehouse_id) AS warehouse_id
+  SELECT ww.workshop_id, (array_agg(ww.warehouse_id))[1] AS warehouse_id
   FROM workshop_warehouses ww
   GROUP BY ww.workshop_id
 )
@@ -39,7 +39,7 @@ WHERE d.warehouse_id IS NULL
   AND d.workshop_id = m.workshop_id;
 
 WITH map AS (
-  SELECT ww.workshop_id, MIN(ww.warehouse_id) AS warehouse_id
+  SELECT ww.workshop_id, (array_agg(ww.warehouse_id))[1] AS warehouse_id
   FROM workshop_warehouses ww
   GROUP BY ww.workshop_id
 )
@@ -50,7 +50,7 @@ WHERE w.warehouse_id IS NULL
   AND w.workshop_id = m.workshop_id;
 
 WITH map AS (
-  SELECT ww.workshop_id, MIN(ww.warehouse_id) AS warehouse_id
+  SELECT ww.workshop_id, (array_agg(ww.warehouse_id))[1] AS warehouse_id
   FROM workshop_warehouses ww
   GROUP BY ww.workshop_id
 )
@@ -61,7 +61,7 @@ WHERE s.warehouse_id IS NULL
   AND s.workshop_id = m.workshop_id;
 
 WITH map AS (
-  SELECT ww.workshop_id, MIN(ww.warehouse_id) AS warehouse_id
+  SELECT ww.workshop_id, (array_agg(ww.warehouse_id))[1] AS warehouse_id
   FROM workshop_warehouses ww
   GROUP BY ww.workshop_id
 )
@@ -72,7 +72,7 @@ WHERE t.from_warehouse_id IS NULL
   AND t.from_workshop_id = m.workshop_id;
 
 WITH map AS (
-  SELECT ww.workshop_id, MIN(ww.warehouse_id) AS warehouse_id
+  SELECT ww.workshop_id, (array_agg(ww.warehouse_id))[1] AS warehouse_id
   FROM workshop_warehouses ww
   GROUP BY ww.workshop_id
 )

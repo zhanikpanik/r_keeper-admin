@@ -27,6 +27,8 @@ CREATE POLICY "inventory_ledger_venue" ON public.inventory_ledger
   FOR ALL USING (public.user_has_venue_access(venue_id))
   WITH CHECK (public.user_has_venue_access(venue_id));
 
+DROP FUNCTION IF EXISTS public.admin_inventory_period_movements(uuid, uuid, timestamptz, timestamptz);
+
 CREATE OR REPLACE FUNCTION public.admin_inventory_period_movements(
   p_venue_id uuid,
   p_workshop_id uuid,

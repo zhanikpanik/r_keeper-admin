@@ -1,6 +1,6 @@
 import { ChevronLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { DeletePageButton } from './DeleteButton';
+import { DeleteButton } from './DeleteButton';
 import { Button } from '@/components/shadcn/button';
 
 interface EditPageProps {
@@ -49,7 +49,7 @@ export function EditPage({
 
    <div className="flex items-center justify-between pt-4 border-t">
     {onDelete ? (
-     <DeletePageButton onClick={onDelete} label={deleteLabel} />
+     <DeleteButton onClick={onDelete} label={deleteLabel || 'Удалить'} />
     ) : (
      <div />
     )}
@@ -57,9 +57,9 @@ export function EditPage({
      type="button"
      disabled={saving}
      onClick={onSave}
-     className="bg-green-600 hover:bg-green-700 text-white rounded-lg"
+     className="bg-primary hover:bg-primary/80 text-primary-foreground rounded-lg"
     >
-     {saving ? 'Сохранение…' : 'Сохранить'}
+     {saving ? 'Сохранение…' : 'Сохранить блюдо'}
     </Button>
    </div>
   </div>

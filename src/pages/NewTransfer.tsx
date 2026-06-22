@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation, matchPath } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, matchPath } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { EditPage } from '@/components/ui/EditPage';
 import { Field } from '@/components/ui/Field';
-import { DeleteLineButton } from '@/components/ui/DeleteButton';
+import { DeleteButton } from '@/components/ui/DeleteButton';
 import { SearchableSelect } from '@/components/shadcn/searchable-select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/tabs';
 import { DatePicker } from '@/components/shadcn/date-picker';
@@ -46,7 +46,13 @@ function linesFromTransferItems(items: TransferRow['items']): LineItem[] {
  }));
 }
 
-function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow | null }) {
+function TransferFormInner({
+ initialTransfer,
+ preselectedFromWarehouseId,
+}: {
+ initialTransfer: TransferRow | null;
+ preselectedFromWarehouseId?: string;
+}) {
  const navigate = useNavigate();
  const { data: warehouses = [] } = useWarehouses();
  const createTransfer = useCreateTransfer();
@@ -55,7 +61,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
  const editId = initialTransfer?.id ?? null;
 
  const [fromWarehouseId, setFromWarehouseId] = useState(
-  () => initialTransfer?.fromWarehouseId ?? initialTransfer?.fromWorkshopId ?? ''
+  () => initialTransfer?.fromWarehouseId ?? initialTransfer?.fromWorkshopId ?? preselectedFromWarehouseId ?? ''
  );
  const [toWarehouseId, setToWarehouseId] = useState(
   () => initialTransfer?.toWarehouseId ?? initialTransfer?.toWorkshopId ?? ''
@@ -108,7 +114,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
  }
 
  function goBack() {
-  navigate('/warehouse/transfers');
+  navigate('/warehouse/operations');
  }
 
  async function handleSave() {
@@ -146,7 +152,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
      items: payloadItems,
     });
     toast.success('Изменения сохранены');
-    navigate('/warehouse/transfers');
+    navigate('/warehouse/operations');
    } else {
     await createTransfer.mutateAsync({
      from_warehouse_id: fromWarehouseId,
@@ -156,7 +162,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
      items: payloadItems,
     });
     toast.success('Перемещение создано');
-    navigate('/warehouse/transfers');
+    navigate('/warehouse/operations');
    }
   } catch (e: unknown) {
    toast.error('Ошибка: ' + ((e as Error)?.message || 'неизвестная'));
@@ -203,7 +209,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
 
     <Field label="Комментарий" topLabel>
      <textarea
-      className="w-full max-w-sm px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm resize-none"
+      className="w-full max-w-sm px-3 py-2 border border-border rounded-lg text-sm resize-none"
       rows={2}
       placeholder="Необязательно"
       value={comment}
@@ -238,7 +244,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
         />
        </div>
        <div className="w-9 flex justify-center">
-        <DeleteLineButton onClick={() => removeLine(line.key)} />
+        <DeleteButton variant="line" onClick={() => removeLine(line.key)} />
        </div>
       </div>
      ))}
@@ -247,8 +253,7 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
     <button
      type="button"
      onClick={addRow}
-     className="flex items-center gap-1.5 mt-6 px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer hover:opacity-80"
-     style={{ color: '#5D4FF1' }}
+     className="flex items-center gap-1.5 mt-6 px-3 py-1.5 text-sm font-medium border rounded-md hover:bg-secondary transition-colors"
     >
      <Plus className="w-4 h-4" />
      Добавить строку
@@ -261,10 +266,12 @@ function TransferFormInner({ initialTransfer }: { initialTransfer: TransferRow |
 export function NewTransfer() {
  const navigate = useNavigate();
  const { pathname } = useLocation();
+ const [searchParams] = useSearchParams();
  const editMatch = matchPath({ path: '/warehouse/transfers/:id/edit', end: true }, pathname);
  const editId = editMatch?.params.id;
  const isEdit = Boolean(editId);
  const { data: t, isLoading, isError, error } = useWarehouseTransfer(isEdit ? editId : undefined);
+ const preselectedFromWarehouseId = searchParams.get('from') || undefined;
 
  if (isEdit && isLoading) {
   return <div className="p-8 text-sm text-muted-foreground">Загрузка…</div>;
@@ -278,7 +285,7 @@ export function NewTransfer() {
     </p>
     <button
      type="button"
-     onClick={() => navigate('/warehouse/transfers')}
+     onClick={() => navigate('/warehouse/operations')}
      className="text-sm text-primary font-medium"
     >
      К списку перемещений
@@ -293,7 +300,7 @@ export function NewTransfer() {
     <p className="text-muted-foreground">Отменённое перемещение нельзя редактировать.</p>
     <button
      type="button"
-     onClick={() => navigate(`/warehouse/transfers/${t.id}`)}
+     onClick={() => navigate('/warehouse/operations')}
      className="text-sm text-primary font-medium"
     >
      К документу
@@ -302,5 +309,11 @@ export function NewTransfer() {
   );
  }
 
- return <TransferFormInner key={isEdit ? t!.id : 'new'} initialTransfer={isEdit ? t! : null} />;
+ return (
+  <TransferFormInner
+   key={isEdit ? t!.id : 'new'}
+   initialTransfer={isEdit ? t! : null}
+   preselectedFromWarehouseId={preselectedFromWarehouseId}
+  />
+ );
 }

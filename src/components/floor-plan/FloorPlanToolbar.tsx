@@ -57,7 +57,7 @@ export function FloorPlanToolbar({
     <div className="flex items-center gap-2">
      <button
       onClick={onAddClick}
-      className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
+      className="px-4 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/80 transition-colors"
      >
       + Добавить стол
      </button>

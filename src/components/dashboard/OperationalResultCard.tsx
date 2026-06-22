@@ -25,7 +25,7 @@ export function OperationalResultCard({ data }: Props) {
       <div className="space-y-1.5 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Выручка</span>
-          <span className="text-green-600 font-medium">+{fmt(data.revenue)}</span>
+          <span className="text-success font-medium">+{fmt(data.revenue)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Кассовые расходы</span>

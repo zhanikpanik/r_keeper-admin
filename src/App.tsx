@@ -12,6 +12,7 @@ import { Dashboard } from '@/pages/DashboardNew';
 import { Menu } from '@/pages/Menu';
 import { Staff } from '@/pages/Staff';
 import { FloorPlan } from '@/pages/FloorPlan';
+import { DesignPage } from '@/pages/DesignPage';
 import { CashShifts } from '@/pages/CashShifts';
 import { Transactions } from '@/pages/Transactions';
 import { Checks } from '@/pages/Checks';
@@ -133,6 +134,7 @@ function App() {
          <Route path="/warehouse/settings" element={<WarehouseWorkspace />} />
          <Route path="/import" element={<Import />} />
          <Route path="/settings" element={<SettingsPage />} />
+         <Route path="/design" element={<DesignPage />} />
         </Route>
        </Route>
       </Routes>

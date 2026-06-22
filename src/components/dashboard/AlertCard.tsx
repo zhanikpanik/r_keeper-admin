@@ -1,65 +1,86 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, AlertOctagon, X } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, Info, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SvgIcon } from '@/components/dashboard/SvgIcon';
 
 interface AlertCardProps {
-  type: 'critical' | 'warning';
+  type: 'critical' | 'warning' | 'info';
   message: string;
   actionLabel: string | null;
   actionHref: string | null;
   onDismiss: () => void;
+  onAction?: () => void;
+  /** Контекстная иконка (lucide) */
+  icon?: LucideIcon;
+  /** Контекстная иконка (кастомный SVG raw) — приоритет над icon */
+  iconRaw?: string;
+  /** Render as a row inside a shared container (no bg, no radius) */
+  grouped?: boolean;
 }
 
-const config = {
-  critical: {
-    bg: 'bg-destructive/5',
-    border: 'border-destructive',
-    icon: 'text-destructive',
-    IconComponent: AlertOctagon,
-  },
-  warning: {
-    bg: 'bg-amber-50',
-    border: 'border-amber-500',
-    icon: 'text-amber-600',
-    IconComponent: AlertTriangle,
-  },
+const severityFallback = {
+  critical: AlertOctagon,
+  warning: AlertTriangle,
+  info: Info,
 };
 
-export function AlertCard({ type, message, actionLabel, actionHref, onDismiss }: AlertCardProps) {
+const severityColor = {
+  critical: 'text-destructive',
+  warning: 'text-warning',
+  info: 'text-info',
+};
+
+export function AlertCard({ type, message, actionLabel, actionHref, onDismiss, onAction, icon, iconRaw, grouped }: AlertCardProps) {
   const [dismissed, setDismissed] = useState(false);
-  const c = config[type];
 
   if (dismissed) return null;
 
-  return (
-    <div
-      className={cn(
-        'border-l-4 rounded-r-lg px-4 py-2.5 flex items-center gap-3',
-        c.border, c.bg,
-      )}
+  const IconComponent: LucideIcon = icon || severityFallback[type];
+
+  const actionElement = onAction ? (
+    <button
+      type="button"
+      onClick={onAction}
+      className="shrink-0 text-sm font-medium text-primary hover:underline transition-colors"
     >
-      <c.IconComponent className={cn('w-4 h-4 shrink-0', c.icon)} />
+      {actionLabel}
+    </button>
+  ) : actionLabel && actionHref ? (
+    <Link
+      to={actionHref}
+      className="shrink-0 text-sm font-medium text-primary hover:underline transition-colors"
+    >
+      {actionLabel}
+    </Link>
+  ) : null;
+
+  return (
+    <div className={cn(
+      'flex items-center gap-2',
+      grouped
+        ? 'px-4 py-2'
+        : 'bg-[#EFF1F3] rounded-xl px-4 py-4'
+    )}>
+      {iconRaw ? (
+        <SvgIcon raw={iconRaw} className={cn('w-auto h-10 shrink-0', severityColor[type])} />
+      ) : (
+        <IconComponent className={cn('w-10 h-10 shrink-0', severityColor[type])} />
+      )}
 
       <span className="text-sm text-foreground flex-1 min-w-0 truncate">
         {message}
       </span>
 
-      {actionLabel && actionHref && (
-        <Link
-          to={actionHref}
-          className="shrink-0 text-sm font-medium text-primary hover:underline whitespace-nowrap"
-        >
-          {actionLabel}
-        </Link>
-      )}
+      {actionElement}
 
       <button
         type="button"
         onClick={() => { setDismissed(true); onDismiss(); }}
-        className="shrink-0 p-0.5 rounded hover:bg-black/5 transition-colors"
+        className="shrink-0 p-2 rounded-md hover:bg-muted transition-colors"
+        aria-label="Скрыть"
       >
-        <X className="w-3.5 h-3.5 text-muted-foreground" />
+        <X className="w-4 h-4 text-muted-foreground" />
       </button>
     </div>
   );

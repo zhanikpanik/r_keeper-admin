@@ -23,7 +23,7 @@ export function DecimalSuffixInput({
     autoComplete="off"
     spellCheck={false}
     placeholder={placeholder}
-    className={`w-full pl-3 py-2 border border-[#E6E5E3] rounded-lg text-sm text-right tabular-nums ${pad} ${bold ? 'font-medium' : ''}`}
+    className={`w-full pl-3 py-2 border border-border rounded-lg text-sm text-right tabular-nums ${pad} ${bold ? 'font-medium' : ''}`}
     value={value}
     onChange={(e) => onChange(sanitizeDecimalString(e.target.value))}
     onKeyDown={(e) => {

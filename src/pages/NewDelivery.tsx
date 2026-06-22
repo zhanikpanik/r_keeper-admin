@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useNavigate, useLocation, matchPath } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, matchPath } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { EditPage } from '@/components/ui/EditPage';
 import { Field } from '@/components/ui/Field';
-import { DeleteLineButton } from '@/components/ui/DeleteButton';
+import { DeleteButton } from '@/components/ui/DeleteButton';
 import { SearchableSelect } from '@/components/shadcn/searchable-select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/shadcn/tabs';
 import { DatePicker } from '@/components/shadcn/date-picker';
@@ -59,9 +59,17 @@ function linesFromDeliveryItems(items: DeliveryRow['items']): LineItem[] {
  });
 }
 
-function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow | null }) {
+function DeliveryFormInner({
+ initialDelivery,
+ preselectedWarehouseId,
+}: {
+ initialDelivery: DeliveryRow | null;
+ preselectedWarehouseId?: string;
+}) {
  const navigate = useNavigate();
- const [warehouseId, setWarehouseId] = useState(() => (initialDelivery as any)?.warehouse_id ?? '');
+ const [warehouseId, setWarehouseId] = useState(
+  () => (initialDelivery as any)?.warehouse_id || preselectedWarehouseId || ''
+ );
  const {
   data: ingRows = [],
   isPending: ingredientsListPending,
@@ -175,8 +183,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
  }, 0);
 
  function goBack() {
-  if (editId) navigate(`/warehouse/deliveries/${editId}`);
-  else navigate('/warehouse/deliveries');
+  navigate('/warehouse/operations');
  }
 
  async function handleSave() {
@@ -215,7 +222,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
      items: payloadItems,
     });
     toast.success('Изменения сохранены');
-    navigate(`/warehouse/deliveries/${editId}`);
+    navigate('/warehouse/operations');
    } else {
     const id = await createDelivery.mutateAsync({
      supplier: supplier.trim(),
@@ -226,7 +233,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
      items: payloadItems,
     });
     toast.success('Поставка создана');
-    navigate(`/warehouse/deliveries/${id}`);
+    navigate('/warehouse/operations');
    }
   } catch (e: unknown) {
    toast.error('Ошибка: ' + ((e as Error)?.message || 'неизвестная'));
@@ -253,7 +260,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
 
     <Field label="Поставщик">
      <input
-      className="w-full max-w-sm px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+      className="w-full max-w-sm px-3 py-2 border border-border rounded-lg text-sm "
       placeholder="Название компании"
       value={supplier}
       onChange={(e) => setSupplier(e.target.value)}
@@ -278,7 +285,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
 
     <Field label="Комментарий" topLabel>
      <textarea
-      className="w-full max-w-sm px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm resize-none"
+      className="w-full max-w-sm px-3 py-2 border border-border rounded-lg text-sm resize-none"
       rows={2}
       placeholder="Необязательно"
       value={comment}
@@ -299,7 +306,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
       <button
        type="button"
        onClick={() => navigate('/warehouse/settings')}
-       className="text-xs font-semibold text-blue-800 hover:underline whitespace-nowrap"
+       className="px-3 py-1 text-sm font-medium border rounded-md hover:bg-secondary transition-colors whitespace-nowrap"
       >
        Назначить в настройках складов
       </button>
@@ -349,7 +356,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
         />
        </div>
        <div className="w-9 flex justify-center">
-        <DeleteLineButton onClick={() => removeLine(line.key)} />
+        <DeleteButton variant="line" onClick={() => removeLine(line.key)} />
        </div>
       </div>
      ))}
@@ -358,8 +365,7 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
     <button
      type="button"
      onClick={addRow}
-     className="flex items-center gap-1.5 mt-6 px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer hover:opacity-80"
-     style={{ color: '#5D4FF1' }}
+     className="flex items-center gap-1.5 mt-6 px-3 py-1.5 text-sm font-medium border rounded-md hover:bg-secondary transition-colors"
     >
      <Plus className="w-4 h-4" />
      Добавить строку
@@ -383,10 +389,12 @@ function DeliveryFormInner({ initialDelivery }: { initialDelivery: DeliveryRow |
 export function NewDelivery() {
  const navigate = useNavigate();
  const { pathname } = useLocation();
+ const [searchParams] = useSearchParams();
  const editMatch = matchPath({ path: '/warehouse/deliveries/:id/edit', end: true }, pathname);
  const editId = editMatch?.params.id;
  const isEdit = Boolean(editId);
  const { data: d, isLoading, isError, error } = useWarehouseDelivery(isEdit ? editId : undefined);
+ const preselectedWarehouseId = searchParams.get('warehouse') || undefined;
 
  if (isEdit && isLoading) {
   return <div className="p-8 text-muted-foreground">Загрузка…</div>;
@@ -400,10 +408,10 @@ export function NewDelivery() {
     </p>
     <button
      type="button"
-     onClick={() => navigate('/warehouse/deliveries')}
+     onClick={() => navigate('/warehouse/operations')}
      className="text-sm text-primary font-medium"
     >
-     К списку поставок
+     Все операции
     </button>
    </div>
   );
@@ -415,14 +423,20 @@ export function NewDelivery() {
     <p className="text-muted-foreground">Отменённую поставку нельзя редактировать.</p>
     <button
      type="button"
-     onClick={() => navigate(`/warehouse/deliveries/${d.id}`)}
+     onClick={() => navigate('/warehouse/operations')}
      className="text-sm text-primary font-medium"
     >
-     К документу
+     Все операции
     </button>
    </div>
   );
  }
 
- return <DeliveryFormInner key={isEdit ? d!.id : 'new'} initialDelivery={isEdit ? d! : null} />;
+ return (
+  <DeliveryFormInner
+   key={isEdit ? d!.id : 'new'}
+   initialDelivery={isEdit ? d! : null}
+   preselectedWarehouseId={preselectedWarehouseId}
+  />
+ );
 }

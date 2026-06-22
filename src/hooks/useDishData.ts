@@ -110,23 +110,6 @@ async function fetchDishModifierGroups(dishId: string): Promise<ModifierGroup[]>
   }));
 }
 
-async function fetchAllModifierGroups(): Promise<ModifierGroup[]> {
-  const { data: groups } = await supabase
-    .from('modifier_groups')
-    .select('id, name, is_required, max_select')
-    .eq('venue_id', VENUE_ID);
-
-  const { data: mods } = await supabase
-    .from('modifiers')
-    .select('id, name, price, modifier_group_id, ingredient_id, quantity, unit')
-    .order('sort_order');
-
-  return (groups || []).map((g: any) => ({
-    ...g,
-    modifiers: (mods || []).filter((m: any) => m.modifier_group_id === g.id),
-  }));
-}
-
 async function fetchIngredients(): Promise<Ingredient[]> {
   const { data } = await supabase
     .from('products')
@@ -210,14 +193,6 @@ export function useDishModifiers(id: string | undefined) {
   });
 }
 
-export function useAllModifierGroups() {
-  return useQuery({
-    queryKey: ['all-modifier-groups'],
-    queryFn: fetchAllModifierGroups,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
 export function useIngredients() {
   return useQuery({
     queryKey: ['ingredients'],
@@ -246,7 +221,6 @@ export function useInvalidateDish() {
       qc.invalidateQueries({ queryKey: ['dish-recipe', id] });
       qc.invalidateQueries({ queryKey: ['dish-modifiers', id] });
       qc.invalidateQueries({ queryKey: ['dish-modifier-ingredients', id] });
-      qc.invalidateQueries({ queryKey: ['all-modifier-groups'] });
       qc.invalidateQueries({ queryKey: ['dishes'] });
     },
     // Optimistic: update recipe cache directly

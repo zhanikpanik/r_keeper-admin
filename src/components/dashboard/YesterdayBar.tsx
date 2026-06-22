@@ -1,5 +1,5 @@
 import { CheckCircle, AlertTriangle, Calendar, WifiOff } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import type { YesterdaySummary } from '@/types/dashboard';
 
 interface Props {
@@ -7,12 +7,11 @@ interface Props {
 }
 
 export function YesterdayBar({ data }: Props) {
-  const navigate = useNavigate();
 
   // Выходной — вчера не работали
   if (data.status === 'dayoff') {
     return (
-      <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border/50 bg-muted/30 text-sm">
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-[#EFF1F3] rounded-xl text-sm">
         <Calendar className="w-4 h-4 text-muted-foreground" />
         <span className="text-muted-foreground">Вчера — выходной</span>
       </div>
@@ -22,7 +21,7 @@ export function YesterdayBar({ data }: Props) {
   // Данные недоступны
   if (data.status === 'unavailable') {
     return (
-      <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border/50 bg-muted/30 text-sm">
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-[#EFF1F3] rounded-xl text-sm">
         <WifiOff className="w-4 h-4 text-muted-foreground" />
         <span className="text-muted-foreground">Вчера — данные недоступны</span>
       </div>
@@ -36,13 +35,7 @@ export function YesterdayBar({ data }: Props) {
   const isClean = data.shiftClosed && diff !== null && Math.abs(diff) <= 500;
 
   return (
-    <div
-      className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-border/50 bg-muted/30 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
-      onClick={() => navigate('/cash-shifts')}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') navigate('/cash-shifts'); }}
-    >
+    <div className="flex items-center gap-2 px-4 py-2.5 bg-[#EFF1F3] rounded-xl text-sm">
       <span className="text-muted-foreground">Вчера:</span>
 
       <span className="font-medium text-foreground">
@@ -56,7 +49,7 @@ export function YesterdayBar({ data }: Props) {
       <span className="text-muted-foreground">·</span>
 
       {isClean ? (
-        <span className="flex items-center gap-1 text-green-600">
+        <span className="flex items-center gap-1 text-success">
           <CheckCircle className="w-3.5 h-3.5" />
           смена закрыта
           {diff !== null && diff !== 0 && (
@@ -66,7 +59,7 @@ export function YesterdayBar({ data }: Props) {
           )}
         </span>
       ) : (
-        <span className="flex items-center gap-1 text-amber-600">
+        <span className="flex items-center gap-1 text-warning">
           <AlertTriangle className="w-3.5 h-3.5" />
           {!data.shiftClosed
             ? 'смена не закрыта'
@@ -78,8 +71,7 @@ export function YesterdayBar({ data }: Props) {
 
       <Link
         to="/cash-shifts"
-        className="ml-auto text-xs text-primary hover:underline"
-        onClick={(e) => e.stopPropagation()}
+        className="ml-auto text-sm text-primary hover:underline"
       >
         Все смены →
       </Link>

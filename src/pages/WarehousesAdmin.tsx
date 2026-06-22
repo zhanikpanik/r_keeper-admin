@@ -68,7 +68,7 @@ export function WarehousesAdmin() {
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
       >
         <ArrowLeft className="w-4 h-4" />
-        Назад к складу
+        Склад
       </button>
 
       <div className="flex items-center justify-between mb-6 gap-4">
@@ -81,7 +81,7 @@ export function WarehousesAdmin() {
         {selectedWarehouse?.id && (
           <Link
             to={`/menu/ingredients/add?warehouse=${selectedWarehouse.id}&back=warehouse`}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/80 transition-colors"
           >
             + Добавить ингредиент
           </Link>
@@ -99,7 +99,7 @@ export function WarehousesAdmin() {
       {selectedWarehouse && (
         <>
           <div className="flex items-center gap-2 mb-4">
-            <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-72 bg-secondary/30">
+            <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-72">
               <img src={searchIcon} className="w-3.5 h-3.5 opacity-40" alt="" />
               <input
                 className="bg-transparent text-sm outline-none flex-1"
@@ -131,13 +131,13 @@ export function WarehousesAdmin() {
               Удалить склад
             </button>
             <div className="ml-auto text-sm text-muted-foreground">
-              Всего: <span className="font-semibold text-foreground">{somRounded(total)} сом</span>
+              Всего: <span className="font-medium text-foreground">{somRounded(total)} сом</span>
             </div>
           </div>
 
-          <table className="w-full table-fixed border-separate border-spacing-0">
-            <thead>
-              <tr className="text-sm font-semibold text-foreground">
+          <table className="table-fixed border-separate border-spacing-0">
+            <thead className="sticky top-0 z-10 bg-background">
+              <tr className="text-sm font-medium text-foreground">
                 <th scope="col" className="text-left py-3 px-3 w-[220px]">Название</th>
                 <th scope="col" className="text-left py-3 px-3 w-[100px]">Ед.</th>
                 <th scope="col" className="text-right py-3 px-3 w-[120px]">Остаток</th>
@@ -157,16 +157,16 @@ export function WarehousesAdmin() {
               {!ingredientsPending && filteredIngredients.map((item) => (
                 <tr
                   key={item.id}
-                  className="cursor-pointer hover:bg-muted/30 transition-colors"
+                  className="cursor-pointer hover:bg-accent transition-colors"
                   onClick={() => navigate(`/menu/ingredients/${item.id}?warehouse=${selectedWarehouse.id}&back=warehouse`)}
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/menu/ingredients/${item.id}?warehouse=${selectedWarehouse.id}&back=warehouse`); } }}
                 >
-                  <td className="py-2 px-3 text-sm font-semibold truncate">{item.name}</td>
-                  <td className="py-2 px-3 text-sm text-muted-foreground">{item.unit}</td>
-                  <td className="py-2 px-3 text-sm text-right tabular-nums">{item.stock_quantity}</td>
-                  <td className="py-2 px-3 text-sm text-right tabular-nums text-muted-foreground">{somRounded(item.price)} сом</td>
-                  <td className="py-2 px-3 text-sm text-right tabular-nums font-medium">{somRounded(item.price * item.stock_quantity)} сом</td>
+                  <td className="py-2 px-3 text-sm font-medium truncate">{item.name}</td>
+                  <td className="py-2 px-3 text-sm whitespace-nowrap text-muted-foreground">{item.unit}</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap">{item.stock_quantity}</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap text-muted-foreground">{somRounded(item.price)} сом</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap font-medium">{somRounded(item.price * item.stock_quantity)} сом</td>
                 </tr>
               ))}
             </tbody>

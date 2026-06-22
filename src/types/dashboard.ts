@@ -16,7 +16,7 @@ export interface Metric {
 }
 
 /** Тип алерта */
-export type AlertType = 'critical' | 'warning';
+export type AlertType = 'critical' | 'warning' | 'info';
 
 /** Один алерт на дашборде — проблема + целевое действие */
 export interface Alert {
@@ -27,6 +27,33 @@ export interface Alert {
   actionLabel: string | null;
   /** Куда ведёт кнопка */
   actionHref: string | null;
+  /** Домен для группировки: 'warehouse' | 'checks' | 'cash' | 'staff' */
+  domain: string;
+}
+
+/** Группа алертов по severity — для фазы «много проблем» */
+export interface AlertGroup {
+  severity: AlertType;
+  label: string;
+  alerts: Alert[];
+  /** Раскрыта по умолчанию? */
+  defaultExpanded: boolean;
+}
+
+/** Карточка миграции — одно действие на весь домен */
+export type MigrationActionType = 'inventory' | 'mark_checked' | 'close_period';
+
+export interface MigrationCard {
+  id: string;
+  domain: string;
+  problemCount: number;
+  problems: string[];
+  contextMessage: string;
+  actionLabel: string;
+  actionHref?: string;
+  actionType: MigrationActionType;
+  /** Граничная дата для baseline */
+  baselineDate: string;
 }
 
 /** Тип события в хронологии — для выбора иконки */
@@ -55,6 +82,12 @@ export interface WarehouseThreat {
   level: 'critical' | 'warning';
   /** Блюда, которые под угрозой */
   affectedDishes: string[];
+  /** Склад, на котором лежит ингредиент */
+  warehouseName: string | null;
+  /** Минусовой остаток */
+  negative?: boolean;
+  /** Последняя поставка: дата + количество */
+  lastDelivery: string | null;
 }
 
 /** Статус текущей смены (для алерта) */
@@ -79,6 +112,8 @@ export interface TopDish {
   name: string;
   qty: number;
   revenue: number;
+  cost: number;
+  margin: number;
 }
 
 export interface OperationalResult {
@@ -88,13 +123,47 @@ export interface OperationalResult {
   net: number;
 }
 
+/** Ингредиент с отрицательным остатком — для inline-корректировки */
+export interface NegativeStockItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unit: string;
+  warehouseId: string;
+  warehouseName: string | null;
+}
+
 export interface DashboardData {
   metrics: Metric[];
   alerts: Alert[];
+  /** Сгруппированные алерты — когда их > ALERT_GROUP_THRESHOLD */
+  alertGroups: AlertGroup[] | null;
+  /** Всего алертов (для health bar) */
+  totalAlertCount: number;
+  /** Критических алертов */
+  criticalCount: number;
   chronology: ChronologyEvent[];
   warehouseThreats: WarehouseThreat[];
   shiftStatus: ShiftAlertStatus;
   yesterday: YesterdaySummary;
   topDishes: TopDish[];
-  operationalResult: OperationalResult;
+  /** true если сегодня нет оплаченных заказов */
+  isTodayEmpty: boolean;
+  /** Выручка за 7 дней (для фолбека) */
+  weekRevenue: number;
+  /** Чеков за 7 дней (для фолбека) */
+  weekChecks: number;
+  /** Анти-топ: блюда с отрицательной или низкой маржой (за месяц) */
+  antiTop: TopDish[];
+  /** Карточки миграции — только при переходе с Poster */
+  migrationCards: MigrationCard[];
+  /** Метка периода для хронологии: «сегодня», «неделя», «месяц» */
+  periodLabel: string;
+  /** Сырые данные минусовых остатков для inline-корректировки */
+  negativeStockItems: NegativeStockItem[];
+  /** Общая себестоимость проданных блюд за период (сом) */
+  foodCost: number;
 }
+
+/** Порог: больше этого числа — алерты группируются */
+export const ALERT_GROUP_THRESHOLD = 5;

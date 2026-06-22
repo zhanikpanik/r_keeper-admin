@@ -28,18 +28,18 @@ function SegmentedRow({
 }) {
  return (
   <div
-   className="inline-flex flex-wrap gap-0.5 rounded-lg p-0.5"
-   style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+   className="inline-flex flex-wrap gap-0.5 rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
   >
    {options.map((opt) => (
     <button
      key={opt}
      type="button"
      onClick={() => onChange(value === opt ? '' : opt)}
-     className={`px-4 py-1.5 rounded-md text-sm transition-all ${
-      value === opt ? 'bg-white text-foreground' : 'text-muted-foreground hover:text-foreground'
+     className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
+      value === opt ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
      }`}
-     style={value === opt ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}
+     style={value === opt ? {  } : {}}
     >
      {opt}
     </button>
@@ -187,12 +187,12 @@ export function AddIngredients() {
     className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
    >
     <ArrowLeft className="w-4 h-4" />
-    Назад к ингредиентам
+    Ингредиенты
    </button>
 
    <h2 className="text-2xl font-bold mb-1">Добавить ингредиенты</h2>
    <p className="text-sm text-muted-foreground mb-8">
-    Заполните карточки и нажмите «Сохранить». Пустые названия будут пропущены.
+    Заполните карточки и нажмите «Добавить». Пустые названия будут пропущены.
    </p>
 
    <div className="space-y-6 mb-8">
@@ -209,7 +209,7 @@ export function AddIngredients() {
         <button
          type="button"
          onClick={() => removeBlock(block.key)}
-         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-600 transition-colors"
+         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-red-600 transition-colors"
         >
          <Trash2 className="w-3.5 h-3.5" />
          Удалить
@@ -219,7 +219,7 @@ export function AddIngredients() {
 
       <Field label="Название">
        <input
-        className="w-full px-3 py-2 border rounded-lg text-sm bg-background"
+        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background"
         placeholder="Например: Куриное филе"
         value={block.name}
         onChange={(e) => patchBlock(block.key, { name: e.target.value })}
@@ -237,7 +237,7 @@ export function AddIngredients() {
       <Field label="Остаток на складе">
        <input
         type="number"
-        className="w-full max-w-xs px-3 py-2 border rounded-lg text-sm bg-background text-right tabular-nums"
+        className="w-full max-w-xs px-3 py-2 border border-border rounded-lg text-sm bg-background text-right tabular-nums"
         placeholder="0"
         value={block.stockQuantity}
         onChange={(e) => patchBlock(block.key, { stockQuantity: e.target.value })}
@@ -249,8 +249,8 @@ export function AddIngredients() {
         <p className="text-sm text-muted-foreground">Загрузка…</p>
        ) : workshops.length > 0 ? (
         <div
-         className="inline-flex flex-wrap gap-0.5 rounded-lg p-0.5"
-         style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
+         className="inline-flex flex-wrap gap-0.5 rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]"
+
         >
          {workshops.map((w) => (
           <button
@@ -261,14 +261,14 @@ export function AddIngredients() {
              workshopId: block.workshopId === w.id ? '' : w.id,
             })
            }
-           className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+           className={`px-4 py-1.5 rounded-lg text-sm transition-all ${
             block.workshopId === w.id
-             ? 'bg-white text-foreground'
+             ? 'bg-white text-foreground shadow-sm'
              : 'text-muted-foreground hover:text-foreground'
            }`}
            style={
             block.workshopId === w.id
-             ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' }
+             ? {  }
              : {}
            }
           >
@@ -279,7 +279,7 @@ export function AddIngredients() {
        ) : (
         <p className="text-sm text-muted-foreground">Нет цехов — добавьте их на странице ингредиентов.</p>
        )}
-       <p className="text-xs text-muted-foreground mt-1">Цех нужен для привязки блюд, не для хранения на складе.</p>
+       <p className="text-sm text-muted-foreground mt-1">Цех нужен для привязки блюд, не для хранения на складе.</p>
       </Field>
 
       <Field label="Склады">
@@ -287,7 +287,7 @@ export function AddIngredients() {
         <p className="text-sm text-muted-foreground">Загрузка…</p>
        ) : warehouses.length > 0 ? (
         <div className="space-y-1.5">
-         <p className="text-xs text-muted-foreground">Можно выбрать несколько складов</p>
+         <p className="text-sm text-muted-foreground">Можно выбрать несколько складов</p>
          {warehouses.map((w) => {
           const active = block.warehouseIds.includes(w.id);
           return (
@@ -341,9 +341,9 @@ export function AddIngredients() {
      type="button"
      disabled={saving}
      onClick={handleSave}
-     className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
+     className="px-6 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/80 transition-colors disabled:opacity-50"
     >
-     {saving ? 'Сохранение…' : 'Сохранить'}
+     {saving ? 'Добавление…' : 'Добавить'}
     </button>
    </div>
   </div>

@@ -234,45 +234,6 @@ export interface WorkshopItem {
   default_warehouse_id: string | null;
 }
 
-async function createDish(input: {
-  name: string;
-  price: number;
-  categoryId: string | null;
-}) {
-  const trimmed = input.name.trim();
-  if (!trimmed) throw new Error('Укажите название блюда');
-
-  const { data: sortRow } = await supabase
-    .from('products')
-    .select('sort_order')
-    .eq('venue_id', VENUE_ID)
-    .eq('type', 'dish')
-    .order('sort_order', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const nextSort = (Number((sortRow as { sort_order?: number } | null)?.sort_order) || 0) + 1;
-
-  const { data, error } = await supabase
-    .from('products')
-    .insert({
-      venue_id: VENUE_ID,
-      type: 'dish',
-      name: trimmed,
-      price: input.price,
-      cost_price: 0,
-      category_id: input.categoryId,
-      is_active: true,
-      has_modifiers: false,
-      sort_order: nextSort,
-    })
-    .select('id')
-    .single();
-
-  if (error) throw error;
-  return data as { id: string };
-}
-
 async function createCategory(input: { name: string }) {
   const trimmed = input.name.trim();
   if (!trimmed) throw new Error('Укажите название категории');
@@ -400,28 +361,6 @@ async function fetchWarehouseIngredientsList(warehouseId: string | null): Promis
       ],
     }));
   return result;
-}
-
-// Fetch recipe items for a dish
-async function fetchRecipeItems(dishId: string) {
-  const { data } = await supabase
-    .from('recipe_items')
-    .select('id, ingredient_id, quantity, unit')
-    .eq('product_id', dishId);
-
-  if (!data || data.length === 0) return [];
-
-  const ingIds = data.map((r: any) => r.ingredient_id);
-  const { data: ings } = await supabase
-    .from('products')
-    .select('id, name, price')
-    .in('id', ingIds);
-
-  return data.map((r: any) => ({
-    ...r,
-    ingredient_name: ings?.find((i: any) => i.id === r.ingredient_id)?.name || '—',
-    ingredient_cost: ings?.find((i: any) => i.id === r.ingredient_id)?.price || 0,
-  }));
 }
 
 // Hooks
@@ -556,17 +495,6 @@ export function useDeleteWorkshop() {
   });
 }
 
-export function useCreateDish() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createDish,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dishes'] });
-      queryClient.invalidateQueries({ queryKey: ['ingredient-usage'] });
-    },
-  });
-}
-
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -630,15 +558,6 @@ export function useIngredientUsageMap() {
   return useQuery({
     queryKey: ['ingredient-usage'],
     queryFn: fetchIngredientUsageMap,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useRecipeItems(dishId: string | null) {
-  return useQuery({
-    queryKey: ['recipe', dishId],
-    queryFn: () => fetchRecipeItems(dishId!),
-    enabled: !!dishId,
     staleTime: 5 * 60 * 1000,
   });
 }

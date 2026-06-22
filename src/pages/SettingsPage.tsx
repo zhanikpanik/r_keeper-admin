@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { DeleteButton } from '@/components/ui/DeleteButton';
 import { toast } from 'sonner';
 import { useVenue, useUpdateVenue } from '@/hooks/useVenueSettings';
 import {
@@ -7,7 +8,6 @@ import {
  useAddCategory,
  useDeleteCategory,
 } from '@/hooks/useTransactionCategories';
-import { VENUE_ID } from '@/lib/supabase';
 
 export function SettingsPage() {
  const { data: venue, isLoading, isError, error } = useVenue();
@@ -34,20 +34,16 @@ export function SettingsPage() {
   <div className="p-8 max-w-xl">
    <h2 className="text-2xl font-bold mb-2">Настройки</h2>
    <p className="text-sm text-muted-foreground mb-6">
-    Профиль точки в таблице <code className="text-xs bg-muted px-1 rounded">venues</code>.
+    Название, адрес и телефон заведения.
    </p>
-
-   <div className="text-xs text-muted-foreground mb-4 font-mono break-all">
-    venue_id: {VENUE_ID}
-   </div>
 
    {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
 
    {isError && (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 mb-6">
      <p className="font-medium mb-1">Не удалось загрузить venues</p>
-     <p className="text-xs opacity-90">{(error as Error)?.message}</p>
-     <p className="text-xs mt-2 text-muted-foreground">
+     <p className="text-sm opacity-90">{(error as Error)?.message}</p>
+     <p className="text-sm mt-2 text-muted-foreground">
       Убедитесь, что в Supabase есть таблица venues и строка с id = VITE_VENUE_ID.
      </p>
     </div>
@@ -56,25 +52,25 @@ export function SettingsPage() {
    {!isLoading && !isError && venue && (
     <form onSubmit={handleSave} className="space-y-4">
      <div>
-      <label className="text-xs font-medium text-muted-foreground">Название</label>
+      <label className="text-sm font-medium text-muted-foreground">Название</label>
       <input
-       className="mt-1 w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+       className="mt-1 w-full px-3 py-2 border border-border rounded-lg text-sm "
        value={name}
        onChange={(e) => setName(e.target.value)}
       />
      </div>
      <div>
-      <label className="text-xs font-medium text-muted-foreground">Адрес</label>
+      <label className="text-sm font-medium text-muted-foreground">Адрес</label>
       <input
-       className="mt-1 w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+       className="mt-1 w-full px-3 py-2 border border-border rounded-lg text-sm "
        value={address}
        onChange={(e) => setAddress(e.target.value)}
       />
      </div>
      <div>
-      <label className="text-xs font-medium text-muted-foreground">Телефон</label>
+      <label className="text-sm font-medium text-muted-foreground">Телефон</label>
       <input
-       className="mt-1 w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+       className="mt-1 w-full px-3 py-2 border border-border rounded-lg text-sm "
        value={phone}
        onChange={(e) => setPhone(e.target.value)}
       />
@@ -88,9 +84,9 @@ export function SettingsPage() {
      <button
       type="submit"
       disabled={updateVenue.isPending}
-      className="px-4 py-2 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+      className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
      >
-      {updateVenue.isPending ? 'Сохранение…' : 'Сохранить'}
+      {updateVenue.isPending ? 'Применение…' : 'Применить'}
      </button>
     </form>
    )}
@@ -135,9 +131,9 @@ function TransactionCategoriesSection() {
    {/* Add form */}
    <div className="flex items-end gap-2 mb-6">
     <div className="flex-1 min-w-0">
-     <label className="text-xs font-medium text-muted-foreground block mb-1">Название</label>
+     <label className="text-sm font-medium text-muted-foreground block mb-1">Название</label>
      <input
-      className="w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm outline-none focus:border-primary transition-colors"
+      className="w-full px-3 py-2 border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors"
       placeholder="Хоз. расходы"
       value={newName}
       onChange={(e) => setNewName(e.target.value)}
@@ -145,9 +141,9 @@ function TransactionCategoriesSection() {
      />
     </div>
     <div>
-     <label className="text-xs font-medium text-muted-foreground block mb-1">Тип</label>
+     <label className="text-sm font-medium text-muted-foreground block mb-1">Тип</label>
      <select
-      className="px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm outline-none"
+      className="px-3 py-2 border border-border rounded-lg text-sm outline-none"
       value={newType}
       onChange={(e) => setNewType(e.target.value as 'expense' | 'income')}
      >
@@ -159,7 +155,7 @@ function TransactionCategoriesSection() {
      type="button"
      disabled={addCat.isPending || !newName.trim()}
      onClick={handleAdd}
-     className="flex items-center gap-1 px-4 py-2 rounded-lg bg-foreground text-background text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+     className="flex items-center gap-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
     >
      <Plus className="w-4 h-4" />
      Добавить
@@ -206,9 +202,9 @@ function CategoryList({
 }) {
  return (
   <div>
-   <h4 className="text-sm font-semibold text-foreground mb-2">{title}</h4>
+   <h4 className="text-sm font-medium text-foreground mb-2">{title}</h4>
    {items.length === 0 && (
-    <p className="text-xs text-muted-foreground">Нет категорий</p>
+    <p className="text-sm text-muted-foreground">Нет категорий</p>
    )}
    <div className="space-y-1">
     {items.map((c) => (
@@ -217,14 +213,7 @@ function CategoryList({
       className="group flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-muted/10 transition-colors"
      >
       <span className="text-sm">{c.name}</span>
-      <button
-       type="button"
-       disabled={deleting}
-       onClick={() => onDelete(c.id)}
-       className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
-      >
-       <X className="w-3.5 h-3.5" />
-      </button>
+      <DeleteButton variant="line" onClick={() => onDelete(c.id)} />
      </div>
     ))}
    </div>

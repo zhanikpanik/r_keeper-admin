@@ -1,28 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL ?? 'https://gmigxjrvypqjakvualil.supabase.co';
-const supabaseKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ??
-  'sb_publishable_bNXLWbJVGS5Dp2FUPywFkQ_9Cg_mPTu';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL is required. Copy .env.example to .env and fill in your Supabase credentials.');
+if (!supabaseKey) throw new Error('VITE_SUPABASE_ANON_KEY is required. Copy .env.example to .env and fill in your Supabase credentials.');
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
-export const VENUE_ID =
-  import.meta.env.VITE_VENUE_ID ?? '00000000-0000-0000-0000-000000000010';
+export const VENUE_ID = import.meta.env.VITE_VENUE_ID;
+if (!VENUE_ID) throw new Error('VITE_VENUE_ID is required. Copy .env.example to .env and set your venue UUID.');
 
 /** Organization id for staff user creation */
-export const ORG_ID =
-  import.meta.env.VITE_ORG_ID ?? '00000000-0000-0000-0000-000000000001';
-
-/** Primary floor zone synced with POS (see seed / zones table) */
-export const FLOOR_PLAN_ZONE_ID =
-  import.meta.env.VITE_FLOOR_PLAN_ZONE_ID ??
-  '00000000-0000-0000-0000-000000002001';
-
-/** Legacy admin zone id — orders are reassigned then zone deleted on sync */
-export const LEGACY_ADMIN_ZONE_ID =
-  import.meta.env.VITE_LEGACY_ADMIN_ZONE_ID ??
-  '00000000-0000-0000-0000-000000000100';
+export const ORG_ID = import.meta.env.VITE_ORG_ID;
+if (!ORG_ID) throw new Error('VITE_ORG_ID is required. Copy .env.example to .env and set your organization UUID.');
 
 export const REQUIRE_AUTH = import.meta.env.VITE_REQUIRE_AUTH === 'true';

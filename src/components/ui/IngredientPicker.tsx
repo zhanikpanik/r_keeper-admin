@@ -37,7 +37,7 @@ export function IngredientPicker({
  return (
   <div className={`${className} relative`}>
    <input
-    className="w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm "
+    className="w-full px-3 py-2 border border-border rounded-lg text-sm "
     placeholder={disabled ? 'Сначала выберите склад' : placeholder}
     value={query}
     onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
@@ -47,7 +47,7 @@ export function IngredientPicker({
     disabled={disabled}
    />
    {open && !disabled && filtered.length > 0 && (
-    <div className="absolute top-full left-0 right-0 bg-white border border-[#E6E5E3] rounded-lg mt-1 shadow-lg z-20 max-h-48 overflow-auto">
+    <div className="absolute top-full left-0 right-0 bg-white border border-border rounded-lg mt-1 shadow-lg z-20 max-h-48 overflow-auto">
      {filtered.slice(0, 8).map((ing) => (
       <button
        key={ing.id}

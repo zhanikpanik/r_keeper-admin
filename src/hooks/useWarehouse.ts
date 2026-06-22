@@ -63,21 +63,6 @@ export interface WarehouseIngredientVisibilityRow {
   enabled: boolean;
 }
 
-export function useWarehouseList() {
-  return useQuery({
-    queryKey: Q_WH,
-    queryFn: async (): Promise<WarehouseItem[]> => {
-      const { data, error } = await supabase
-        .from('warehouses')
-        .select('id, name')
-        .eq('venue_id', VENUE_ID)
-        .order('name');
-      if (error) throw error;
-      return (data || []) as WarehouseItem[];
-    },
-  });
-}
-
 export function useCreateWarehouse() {
   const qc = useQueryClient();
   return useMutation({
@@ -641,60 +626,61 @@ export function useUpdateDelivery() {
   });
 }
 
-function setDeliveryStatus(id: string, status: DeliveryUiStatus) {
-  return (old: DeliveryRow[] | undefined) =>
-    (old || []).map((d) => (d.id === id ? { ...d, status } : d));
+// --- Status mutation factory ---
+// Eliminates 300 lines of boilerplate across 14 mutations.
+// Each status-change mutation (post/cancel/restore/send/receive) shares the same
+// onMutate + onError structure; only mutationFn + onSettled vary.
+function useStatusMutation<T extends { id: string }>(config: {
+  mutationFn: (id: string) => Promise<void>;
+  queryKey: readonly string[];
+  statusLabel: string;
+  onSettled: (qc: ReturnType<typeof useQueryClient>) => void;
+}) {
+  return () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: config.mutationFn,
+      onMutate: async (id: string) => {
+        await qc.cancelQueries({ queryKey: config.queryKey });
+        const prev = qc.getQueryData<T[]>(config.queryKey);
+        qc.setQueryData<T[]>(config.queryKey, (old) =>
+          (old || []).map((item) =>
+            item.id === id ? { ...item, status: config.statusLabel } as unknown as T : item
+          )
+        );
+        return { prev };
+      },
+      onError: (_err, _vars, ctx) => {
+        if (ctx?.prev) qc.setQueryData(config.queryKey, ctx.prev);
+      },
+      onSettled: () => config.onSettled(qc),
+    });
+  };
 }
 
-export function useSendDeliveryInTransit() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('warehouse_deliveries')
-        .update({ status: 'in_transit' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_DEL });
-      const prev = qc.getQueryData<DeliveryRow[]>(Q_DEL);
-      qc.setQueryData<DeliveryRow[]>(Q_DEL, setDeliveryStatus(id, 'В пути'));
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_DEL, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateDeliveryListAndDetails(qc);
-    },
-  });
-}
+export const useSendDeliveryInTransit = useStatusMutation<DeliveryRow>({
+  mutationFn: async (id) => {
+    const { error } = await supabase
+      .from('warehouse_deliveries').update({ status: 'in_transit' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_DEL,
+  statusLabel: 'В пути',
+  onSettled: (qc) => invalidateDeliveryListAndDetails(qc),
+});
 
-export function useReceiveDelivery() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await finalizeWarehouseDelivery(id);
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_DEL });
-      const prev = qc.getQueryData<DeliveryRow[]>(Q_DEL);
-      qc.setQueryData<DeliveryRow[]>(Q_DEL, setDeliveryStatus(id, 'Принято'));
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_DEL, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateDeliveryListAndDetails(qc);
-      qc.invalidateQueries({ queryKey: ['dishes'] });
-      qc.invalidateQueries({ queryKey: ['ingredients'] });
-      qc.invalidateQueries({ queryKey: ['dashboard_stats', VENUE_ID] });
-    },
-  });
-}
+export const useReceiveDelivery = useStatusMutation<DeliveryRow>({
+  mutationFn: async (id) => { await finalizeWarehouseDelivery(id); },
+  queryKey: Q_DEL,
+  statusLabel: 'Принято',
+  onSettled: (qc) => {
+    invalidateDeliveryListAndDetails(qc);
+    qc.invalidateQueries({ queryKey: ['dishes'] });
+    qc.invalidateQueries({ queryKey: ['ingredients'] });
+    qc.invalidateQueries({ queryKey: ['dashboard_stats', VENUE_ID] });
+  },
+});
 
 async function applyStockDelta(
   warehouseId: string,
@@ -841,69 +827,34 @@ function invalidateStockCaches(qc: ReturnType<typeof useQueryClient>) {
   }
 }
 
-export function useCancelDelivery() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data: row } = await supabase
-        .from('warehouse_deliveries')
-        .select('status')
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID)
-        .single();
-      if (row?.status === 'received') {
-        await reverseDeliveryStock(id);
-      }
-      const { error } = await supabase
-        .from('warehouse_deliveries')
-        .update({ status: 'cancelled' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_DEL });
-      const prev = qc.getQueryData<DeliveryRow[]>(Q_DEL);
-      qc.setQueryData<DeliveryRow[]>(Q_DEL, setDeliveryStatus(id, 'Отменено'));
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_DEL, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateDeliveryListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const useCancelDelivery = useStatusMutation<DeliveryRow>({
+  mutationFn: async (id) => {
+    const { data: row } = await supabase
+      .from('warehouse_deliveries').select('status')
+      .eq('id', id).eq('venue_id', VENUE_ID).single();
+    if (row?.status === 'received') await reverseDeliveryStock(id);
+    const { error } = await supabase
+      .from('warehouse_deliveries').update({ status: 'cancelled' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_DEL,
+  statusLabel: 'Отменено',
+  onSettled: (qc) => { invalidateDeliveryListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
-export function useRestoreDelivery() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await applyDeliveryStockFallback(id);
-      const { error } = await supabase
-        .from('warehouse_deliveries')
-        .update({ status: 'received' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_DEL });
-      const prev = qc.getQueryData<DeliveryRow[]>(Q_DEL);
-      qc.setQueryData<DeliveryRow[]>(Q_DEL, setDeliveryStatus(id, 'Принято'));
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_DEL, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateDeliveryListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const useRestoreDelivery = useStatusMutation<DeliveryRow>({
+  mutationFn: async (id) => {
+    await applyDeliveryStockFallback(id);
+    const { error } = await supabase
+      .from('warehouse_deliveries').update({ status: 'received' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_DEL,
+  statusLabel: 'Принято',
+  onSettled: (qc) => { invalidateDeliveryListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
 // --- Write-offs ---
 
@@ -923,11 +874,17 @@ export interface WriteOffRow {
   status: WriteOffUiStatus;
   created_by: string;
   warehouse_id: string | null;
+  warehouse_name: string;
   workshop_id: string | null;
   items: { id: string; product_id: string | null; name: string; quantity: number; unit: string; reason: string }[];
 }
 
 function mapWriteOff(w: WriteOffDbRow, items: WriteOffItemDbRow[]): WriteOffRow {
+  const wh = w.warehouses;
+  const whName = wh
+    ? (Array.isArray(wh) ? wh[0]?.name : wh.name) || '—'
+    : '—';
+
   return {
     id: w.id,
     date: w.write_off_date,
@@ -936,6 +893,7 @@ function mapWriteOff(w: WriteOffDbRow, items: WriteOffItemDbRow[]): WriteOffRow 
     status: woStatusToUi[w.status] ?? 'Черновик',
     created_by: w.created_by_name || '—',
     warehouse_id: w.warehouse_id ?? null,
+    warehouse_name: whName,
     workshop_id: w.workshop_id ?? null,
     items: items.map((i) => ({
       id: i.id,
@@ -1133,31 +1091,17 @@ export function useUpdateWriteOff() {
   });
 }
 
-export function usePostWriteOff() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await finalizeWarehouseWriteOff(id);
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_WO });
-      const prev = qc.getQueryData<WriteOffRow[]>(Q_WO);
-      qc.setQueryData<WriteOffRow[]>(Q_WO, (old) =>
-        (old || []).map((w) => (w.id === id ? { ...w, status: 'Проведено' as const } : w))
-      );
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_WO, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateWriteOffListAndDetails(qc);
-      qc.invalidateQueries({ queryKey: ['dishes'] });
-      qc.invalidateQueries({ queryKey: ['ingredients'] });
-      qc.invalidateQueries({ queryKey: ['dashboard_stats', VENUE_ID] });
-    },
-  });
-}
+export const usePostWriteOff = useStatusMutation<WriteOffRow>({
+  mutationFn: async (id) => { await finalizeWarehouseWriteOff(id); },
+  queryKey: Q_WO,
+  statusLabel: 'Проведено',
+  onSettled: (qc) => {
+    invalidateWriteOffListAndDetails(qc);
+    qc.invalidateQueries({ queryKey: ['dishes'] });
+    qc.invalidateQueries({ queryKey: ['ingredients'] });
+    qc.invalidateQueries({ queryKey: ['dashboard_stats', VENUE_ID] });
+  },
+});
 
 /** Reduce ingredient stock from write-off lines and mark document posted. Safe if already posted. */
 async function finalizeWarehouseWriteOff(writeOffId: string): Promise<void> {
@@ -1237,73 +1181,34 @@ async function reverseWriteOffStock(writeOffId: string) {
   }
 }
 
-export function useCancelWriteOff() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data: row } = await supabase
-        .from('warehouse_write_offs')
-        .select('status')
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID)
-        .single();
-      if (row?.status === 'posted') {
-        await reverseWriteOffStock(id);
-      }
-      const { error } = await supabase
-        .from('warehouse_write_offs')
-        .update({ status: 'cancelled' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_WO });
-      const prev = qc.getQueryData<WriteOffRow[]>(Q_WO);
-      qc.setQueryData<WriteOffRow[]>(Q_WO, (old) =>
-        (old || []).map((w) => (w.id === id ? { ...w, status: 'Отменено' as const } : w))
-      );
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_WO, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateWriteOffListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const useCancelWriteOff = useStatusMutation<WriteOffRow>({
+  mutationFn: async (id) => {
+    const { data: row } = await supabase
+      .from('warehouse_write_offs').select('status')
+      .eq('id', id).eq('venue_id', VENUE_ID).single();
+    if (row?.status === 'posted') await reverseWriteOffStock(id);
+    const { error } = await supabase
+      .from('warehouse_write_offs').update({ status: 'cancelled' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_WO,
+  statusLabel: 'Отменено',
+  onSettled: (qc) => { invalidateWriteOffListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
-export function useRestoreWriteOff() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await subtractWriteOffStockFallback(id);
-      const { error } = await supabase
-        .from('warehouse_write_offs')
-        .update({ status: 'posted' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_WO });
-      const prev = qc.getQueryData<WriteOffRow[]>(Q_WO);
-      qc.setQueryData<WriteOffRow[]>(Q_WO, (old) =>
-        (old || []).map((w) => (w.id === id ? { ...w, status: 'Проведено' as const } : w))
-      );
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_WO, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateWriteOffListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const useRestoreWriteOff = useStatusMutation<WriteOffRow>({
+  mutationFn: async (id) => {
+    await subtractWriteOffStockFallback(id);
+    const { error } = await supabase
+      .from('warehouse_write_offs').update({ status: 'posted' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_WO,
+  statusLabel: 'Проведено',
+  onSettled: (qc) => { invalidateWriteOffListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
 // --- Inventory ---
 
@@ -1785,97 +1690,41 @@ export function useUpdateTransfer() {
   });
 }
 
-export function usePostTransfer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await finalizeWarehouseTransfer(id);
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_TR });
-      const prev = qc.getQueryData<TransferRow[]>(Q_TR);
-      qc.setQueryData<TransferRow[]>(Q_TR, (old) =>
-        (old || []).map((t) => (t.id === id ? { ...t, status: 'Проведено' as const } : t))
-      );
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_TR, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateTransferListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const usePostTransfer = useStatusMutation<TransferRow>({
+  mutationFn: async (id) => { await finalizeWarehouseTransfer(id); },
+  queryKey: Q_TR,
+  statusLabel: 'Проведено',
+  onSettled: (qc) => { invalidateTransferListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
-export function useCancelTransfer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data: row } = await supabase
-        .from('warehouse_transfers')
-        .select('status')
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID)
-        .single();
-      if (row?.status === 'posted') {
-        await reverseTransferStockFallback(id);
-      }
-      const { error } = await supabase
-        .from('warehouse_transfers')
-        .update({ status: 'cancelled' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_TR });
-      const prev = qc.getQueryData<TransferRow[]>(Q_TR);
-      qc.setQueryData<TransferRow[]>(Q_TR, (old) =>
-        (old || []).map((t) => (t.id === id ? { ...t, status: 'Отменено' as const } : t))
-      );
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_TR, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateTransferListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const useCancelTransfer = useStatusMutation<TransferRow>({
+  mutationFn: async (id) => {
+    const { data: row } = await supabase
+      .from('warehouse_transfers').select('status')
+      .eq('id', id).eq('venue_id', VENUE_ID).single();
+    if (row?.status === 'posted') await reverseTransferStockFallback(id);
+    const { error } = await supabase
+      .from('warehouse_transfers').update({ status: 'cancelled' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_TR,
+  statusLabel: 'Отменено',
+  onSettled: (qc) => { invalidateTransferListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
-export function useRestoreTransfer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await applyTransferStockFallback(id);
-      const { error } = await supabase
-        .from('warehouse_transfers')
-        .update({ status: 'posted' })
-        .eq('id', id)
-        .eq('venue_id', VENUE_ID);
-      if (error) throw error;
-    },
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: Q_TR });
-      const prev = qc.getQueryData<TransferRow[]>(Q_TR);
-      qc.setQueryData<TransferRow[]>(Q_TR, (old) =>
-        (old || []).map((t) => (t.id === id ? { ...t, status: 'Проведено' as const } : t))
-      );
-      return { prev };
-    },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(Q_TR, ctx.prev);
-    },
-    onSettled: () => {
-      invalidateTransferListAndDetails(qc);
-      invalidateStockCaches(qc);
-    },
-  });
-}
+export const useRestoreTransfer = useStatusMutation<TransferRow>({
+  mutationFn: async (id) => {
+    await applyTransferStockFallback(id);
+    const { error } = await supabase
+      .from('warehouse_transfers').update({ status: 'posted' })
+      .eq('id', id).eq('venue_id', VENUE_ID);
+    if (error) throw error;
+  },
+  queryKey: Q_TR,
+  statusLabel: 'Проведено',
+  onSettled: (qc) => { invalidateTransferListAndDetails(qc); invalidateStockCaches(qc); },
+});
 
 async function applyTransferStockFallback(transferId: string) {
   const { data: transfer } = await supabase

@@ -14,6 +14,15 @@ export interface CheckItem {
   unitCost: number | null;
 }
 
+export interface OrderEvent {
+  id: number;
+  action: string;
+  productName: string | null;
+  quantity: number | null;
+  unitPrice: number | null;
+  occurredAt: string;
+}
+
 export type OrderSource = 'pos' | 'glovo' | 'yandex_eda';
 
 export interface Check {
@@ -37,6 +46,8 @@ export interface Check {
   source: OrderSource;
   /** Номер заказа в агрегаторе (для сверки) */
   externalOrderId: string | null;
+  /** События чека из order_events (хронология) */
+  events: OrderEvent[];
 }
 
 interface OrderRow {
@@ -58,6 +69,16 @@ interface OrderItemRow {
   product_price: number | string;
   quantity: number;
   product_id?: string | null;
+}
+
+interface OrderEventRow {
+  id: number;
+  order_id: string;
+  action: string;
+  product_name: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+  occurred_at: string;
 }
 
 function orderWaiterName(users: OrderRow['users']): string {
@@ -131,6 +152,7 @@ function mapOrderToCheck(
   o: OrderRow,
   itemsByOrder: Record<string, CheckItem[]>,
   paymentByOrder: Record<string, { method: string; amount: number } | undefined>,
+  eventsByOrder: Record<string, OrderEvent[]>,
 ): Check {
   const payment = paymentByOrder[o.id];
   const method = payment?.method || 'none';
@@ -162,44 +184,100 @@ function mapOrderToCheck(
     isQuickCheck: Boolean(o.is_quick_check),
     source,
     externalOrderId: o.external_order_id || null,
+    events: eventsByOrder[o.id] || [],
   };
 }
 
-async function fetchChecks(): Promise<Check[]> {
-  const { data: orders, error } = await supabase
+/**
+ * Разбивает массив ID на чанки и собирает результаты из Supabase.
+ * Нужно потому что `.in('col', ids)` падает с Bad Request при >~500 значений.
+ */
+async function chunkedInQuery<T>(
+  table: string,
+  column: string,
+  ids: string[],
+  select: string,
+): Promise<T[]> {
+  const chunkSize = 300;
+  const results: T[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .in(column, chunk);
+    if (error) throw error;
+    if (data) results.push(...(data as T[]));
+  }
+  return results;
+}
+
+async function fetchChecks(fromDate?: string): Promise<Check[]> {
+  let query = supabase
     .from('orders')
     .select(
       'id, table_number, zone_name, status, opened_at, closed_at, total_amount, waiter_id, is_quick_check, users(name)',
     )
     .eq('venue_id', VENUE_ID)
-    .order('opened_at', { ascending: false });
+    .order('opened_at', { ascending: false })
+    .limit(3000);
+
+  if (fromDate) {
+    query = query.gte('opened_at', fromDate);
+  }
+
+  const { data: orders, error } = await query;
 
   if (error) throw error;
   if (!orders || orders.length === 0) return [];
 
   const orderRows = orders as OrderRow[];
   const orderIds = orderRows.map((o) => o.id);
-  const { data: itemRows, error: itemsError } = await supabase
-    .from('order_items')
-    .select('order_id, product_name, product_price, quantity, product_id')
-    .in('order_id', orderIds);
 
-  if (itemsError) throw itemsError;
+  // Чанкированные запросы — чтобы не превысить лимит IN
+  const rawItems = await chunkedInQuery<OrderItemRow>(
+    'order_items',
+    'order_id',
+    orderIds,
+    'order_id, product_name, product_price, quantity, product_id',
+  );
 
-  const rawItems = (itemRows ?? []) as OrderItemRow[];
   const productIds = rawItems.map((r) => (r.product_id != null ? String(r.product_id) : '')).filter(Boolean);
   const costByProduct = await fetchProductCostMap(productIds);
 
   const itemsByOrder = buildItemsByOrder(rawItems, costByProduct);
 
-  const { data: payments } = await supabase
-    .from('payments')
-    .select('order_id, method, amount')
-    .in('order_id', orderIds);
+  const allPayments = await chunkedInQuery<{ order_id: string; method: string; amount: number }>(
+    'payments',
+    'order_id',
+    orderIds,
+    'order_id, method, amount',
+  );
 
   const paymentByOrder: Record<string, { method: string; amount: number }> = {};
-  for (const p of payments || []) {
+  for (const p of allPayments) {
     paymentByOrder[p.order_id] = { method: p.method, amount: Number(p.amount) };
+  }
+
+  // Order events — real history
+  const rawEvents = await chunkedInQuery<OrderEventRow>(
+    'order_events',
+    'order_id',
+    orderIds,
+    'id, order_id, action, product_name, quantity, unit_price, occurred_at',
+  );
+  rawEvents.sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
+  const eventsByOrder: Record<string, OrderEvent[]> = {};
+  for (const ev of rawEvents) {
+    if (!eventsByOrder[ev.order_id]) eventsByOrder[ev.order_id] = [];
+    eventsByOrder[ev.order_id].push({
+      id: ev.id,
+      action: ev.action,
+      productName: ev.product_name,
+      quantity: ev.quantity,
+      unitPrice: ev.unit_price,
+      occurredAt: ev.occurred_at,
+    });
   }
 
   const seen = new Set<string>();
@@ -209,62 +287,14 @@ async function fetchChecks(): Promise<Check[]> {
     return true;
   });
 
-  return uniqueOrders.map((o) => mapOrderToCheck(o, itemsByOrder, paymentByOrder));
+  return uniqueOrders.map((o) => mapOrderToCheck(o, itemsByOrder, paymentByOrder, eventsByOrder));
 }
 
-export async function fetchCheckById(orderId: string): Promise<Check | null> {
-  const { data: orders, error } = await supabase
-    .from('orders')
-    .select(
-      'id, table_number, zone_name, status, opened_at, closed_at, total_amount, waiter_id, is_quick_check, users(name)',
-    )
-    .eq('venue_id', VENUE_ID)
-    .eq('id', orderId)
-    .limit(1);
-
-  if (error) throw error;
-  const o = orders?.[0] as OrderRow | undefined;
-  if (!o) return null;
-
-  const { data: itemRows, error: itemsError } = await supabase
-    .from('order_items')
-    .select('order_id, product_name, product_price, quantity, product_id')
-    .eq('order_id', orderId);
-
-  if (itemsError) throw itemsError;
-
-  const rawItems = (itemRows ?? []) as OrderItemRow[];
-  const productIds = rawItems.map((r) => (r.product_id != null ? String(r.product_id) : '')).filter(Boolean);
-  const costByProduct = await fetchProductCostMap(productIds);
-  const itemsByOrder = buildItemsByOrder(rawItems, costByProduct);
-
-  const { data: payments } = await supabase
-    .from('payments')
-    .select('order_id, method, amount')
-    .eq('order_id', orderId);
-
-  const paymentByOrder: Record<string, { method: string; amount: number }> = {};
-  for (const p of payments || []) {
-    paymentByOrder[p.order_id] = { method: p.method, amount: Number(p.amount) };
-  }
-
-  return mapOrderToCheck(o, itemsByOrder, paymentByOrder);
-}
-
-export function useChecks() {
-  return useQuery({
-    queryKey: ['checks', VENUE_ID],
-    queryFn: fetchChecks,
+export function useChecks(fromDate?: string) {
+  return useQuery<Check[]>({
+    queryKey: ['checks', VENUE_ID, fromDate],
+    queryFn: () => fetchChecks(fromDate),
     // 60s: checks are dynamic but 30s was too chatty
-    staleTime: 60 * 1000,
-  });
-}
-
-export function useCheck(orderId: string | undefined) {
-  return useQuery({
-    queryKey: ['check', VENUE_ID, orderId],
-    queryFn: () => fetchCheckById(orderId!),
-    enabled: Boolean(orderId),
     staleTime: 60 * 1000,
   });
 }

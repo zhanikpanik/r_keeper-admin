@@ -1,8 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subWeeks, subMonths } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { DatePicker } from '@/components/shadcn/date-picker';
+import { SegmentTabs } from '@/components/ui/SegmentTabs';
 
 type Preset = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month';
 
@@ -68,21 +69,11 @@ export function PeriodPicker({ start, end, onChange }: PeriodPickerProps) {
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
-      {PRESETS.map((p) => (
-        <button
-          key={p.key}
-          type="button"
-          onClick={() => handlePreset(p.key)}
-          className={cn(
-            'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-            activePreset === p.key
-              ? 'bg-foreground text-background'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground',
-          )}
-        >
-          {p.label}
-        </button>
-      ))}
+      <SegmentTabs
+        options={PRESETS.map((p) => ({ value: p.key, label: p.label }))}
+        value={activePreset ?? ('' as Preset)}
+        onChange={(v) => handlePreset(v as Preset)}
+      />
 
       <span className="text-muted-foreground text-sm mx-1">или</span>
 

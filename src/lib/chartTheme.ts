@@ -46,7 +46,7 @@ export const WEEK_WIDTHS = [1.2, 1.2, 1.8, 3];
 export const WEEK_OPACITIES = [0.55, 0.65, 0.85, 1];
 
 // ── Typography ──
-export const CHART_FONT = 'system-ui, -apple-system, sans-serif';
+export const CHART_FONT = "'Onest', system-ui, -apple-system, sans-serif";
 export const CHART_FONT_SIZE = 12;   // axis labels (was 10-11)
 export const CHART_FONT_SIZE_SM = 11; // small labels
 

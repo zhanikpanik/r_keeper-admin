@@ -59,7 +59,7 @@ ALTER TABLE warehouse_write_offs
 -- ------------------------------------------------------------
 
 INSERT INTO workshop_stock (product_id, workshop_id, quantity)
-SELECT id, workshop_id, COALESCE(stock_quantity, 0)
+SELECT id, workshop_id, 0
 FROM products
 WHERE type = 'ingredient' AND workshop_id IS NOT NULL
 ON CONFLICT (product_id, workshop_id) DO NOTHING;
@@ -183,6 +183,9 @@ ALTER TABLE workshop_stock ENABLE ROW LEVEL SECURITY;
 ALTER TABLE warehouse_transfers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE warehouse_transfer_items ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "workshop_stock_all" ON workshop_stock;
 CREATE POLICY "workshop_stock_all" ON workshop_stock FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "warehouse_transfers_all" ON warehouse_transfers;
 CREATE POLICY "warehouse_transfers_all" ON warehouse_transfers FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "warehouse_transfer_items_all" ON warehouse_transfer_items;
 CREATE POLICY "warehouse_transfer_items_all" ON warehouse_transfer_items FOR ALL USING (true) WITH CHECK (true);

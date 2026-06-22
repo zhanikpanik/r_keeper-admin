@@ -49,7 +49,7 @@ export function SearchableSelect({
      role="combobox"
      aria-expanded={open}
      disabled={disabled}
-     className="w-full justify-between px-3 py-2 h-auto font-normal text-sm border-[#E6E5E3] rounded-lg"
+     className="w-full justify-between px-3 py-2 h-auto font-normal text-sm border-border rounded-lg"
     >
      <span className={selected ? 'text-foreground truncate' : 'text-muted-foreground truncate'}>
       {selected?.name || (disabled ? 'Сначала выберите склад' : placeholder)}

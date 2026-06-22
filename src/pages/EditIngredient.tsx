@@ -78,7 +78,7 @@ export function EditIngredient() {
  }
 
  async function handleDelete() {
-  if (!id || !confirm('Удалить ингредиент?')) return;
+  if (!id) return;
   const { error } = await supabase.from('products').delete().eq('id', id).eq('venue_id', VENUE_ID);
   if (error) { toast.error('Ошибка: ' + error.message); return; }
   toast.success('Удалено');
@@ -97,15 +97,15 @@ export function EditIngredient() {
    saving={saving}
   >
    <Field label="Название">
-    <input className="w-full px-3 py-2 border border-[#E6E5E3] rounded-lg text-sm " value={name} onChange={(e) => setName(e.target.value)} />
+    <input className="w-full px-3 py-2 border border-border rounded-lg text-sm " value={name} onChange={(e) => setName(e.target.value)} />
    </Field>
 
    <Field label="Ед. измерения">
-    <div className="inline-flex flex-wrap gap-0.5 rounded-lg p-0.5" style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}>
+    <div className="inline-flex flex-wrap gap-0.5 rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
      {UNITS.map((opt) => (
       <button key={opt} type="button" onClick={() => setUnit(unit === opt ? 'кг' : opt)}
-       className={`px-4 py-1.5 rounded-md text-sm transition-all ${unit === opt ? 'bg-white text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-       style={unit === opt ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}>
+       className={`px-4 py-1.5 rounded-lg text-sm transition-all ${unit === opt ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+       style={unit === opt ? {  } : {}}>
        {opt}
       </button>
      ))}
@@ -115,24 +115,24 @@ export function EditIngredient() {
    <Field label="Цех">
     {workshopsPending ? <p className="text-sm text-muted-foreground">Загрузка…</p> :
      workshops.length > 0 ? (
-     <div className="inline-flex flex-wrap gap-0.5 rounded-lg p-0.5" style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}>
+     <div className="inline-flex flex-wrap gap-0.5 rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
       {workshops.map((w) => (
        <button key={w.id} type="button" onClick={() => setWorkshopId(workshopId === w.id ? '' : w.id)}
-        className={`px-4 py-1.5 rounded-md text-sm transition-all ${workshopId === w.id ? 'bg-white text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-        style={workshopId === w.id ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}>
+        className={`px-4 py-1.5 rounded-lg text-sm transition-all ${workshopId === w.id ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+        style={workshopId === w.id ? {  } : {}}>
         {w.name}
        </button>
       ))}
      </div>
     ) : <p className="text-sm text-muted-foreground">Нет цехов.</p>}
-    <p className="text-xs text-muted-foreground mt-1">Цех нужен для привязки блюд, не для хранения на складе.</p>
+    <p className="text-sm text-muted-foreground mt-1">Цех нужен для привязки блюд, не для хранения на складе.</p>
    </Field>
 
    <Field label="Склады">
     {warehousesPending ? <p className="text-sm text-muted-foreground">Загрузка…</p> :
      warehouses.length > 0 ? (
      <div className="space-y-1.5">
-      <p className="text-xs text-muted-foreground">Можно выбрать несколько складов</p>
+      <p className="text-sm text-muted-foreground">Можно выбрать несколько складов</p>
       {warehouses.map((w) => {
        const active = warehouseIds.includes(w.id);
        return (

@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { DeleteButton } from '@/components/ui/DeleteButton';
+import { EditButton } from '@/components/ui/EditButton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from 'sonner';
 import { EditTransactionModal } from '@/pages/CashShifts';
@@ -16,7 +18,6 @@ import {
 import { useTransactionCategories } from '@/hooks/useTransactionCategories';
 import { useShifts, type CashShift } from '@/hooks/useShiftsData';
 import { matchShiftIdForTimestamp } from '@/lib/matchShiftForTimestamp';
-import { VENUE_ID } from '@/lib/supabase';
 
 const TYPE_LABELS: Record<TransactionType, string> = {
  income: 'Приход',
@@ -38,6 +39,24 @@ const TYPE_SIGN: Record<TransactionType, string> = {
  collection: '',
  other: '',
 };
+
+const NOTE_LABELS: Record<string, string> = {
+ payment_insert: 'Внесение наличных',
+ float_in: 'Приход',
+ float_out: 'Расход',
+ sale: 'Продажа',
+ refund: 'Возврат',
+ opening_balance: 'Открытие смены',
+ closing_balance: 'Закрытие смены',
+ backfill_from_payments: 'Синхронизация платежей',
+ backfill_refund_from_payments: 'Синхронизация возвратов',
+};
+
+function humanizeNote(note: string | null | undefined): string {
+ if (!note) return '';
+ const trimmed = note.trim();
+ return NOTE_LABELS[trimmed] || trimmed.replace(/_/g, ' ');
+}
 
 function formatCurrency(amount: number) {
  return amount.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' с';
@@ -110,21 +129,18 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
   <Modal title="Новая транзакция" onClose={onClose}>
     {/* Type */}
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Тип</label>
-     <div
-      className="inline-flex rounded-lg p-0.5"
-      style={{ backgroundColor: '#FAFAFA', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)' }}
-     >
+     <label className="text-sm text-foreground mb-2 block">Тип</label>
+     <div className="inline-flex rounded-lg bg-[#F2F2F7] p-0.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
       {(['expense', 'income', 'collection'] as const).map((t) => (
        <button
         key={t}
         onClick={() => setType(t)}
-        className={`px-4 py-1.5 rounded-md text-sm transition-all ${
+        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
          type === t
-          ? 'bg-white text-foreground'
+          ? 'bg-white text-foreground shadow-sm'
           : 'text-muted-foreground hover:text-foreground'
         }`}
-        style={type === t ? { boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' } : {}}
+        
        >
         {TYPE_LABELS[t]}
        </button>
@@ -134,7 +150,7 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
 
     {/* Amount */}
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Сумма</label>
+     <label className="text-sm text-foreground mb-2 block">Сумма</label>
      <div className="relative">
       <input
        type="number"
@@ -144,15 +160,15 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
        onChange={(e) => { setAmount(e.target.value); setError(''); }}
        autoFocus
       />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">сом</span>
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">сом</span>
      </div>
-     {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+     {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
     </div>
 
     {/* Category (income/expense only) */}
     {type !== 'collection' && categories.length > 0 && (
      <div className="mb-4">
-      <label className="text-xs text-foreground mb-2 block">Категория</label>
+      <label className="text-sm text-foreground mb-2 block">Категория</label>
       <select
        className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
        value={categoryId ?? ''}
@@ -168,7 +184,7 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
 
     {/* Datetime */}
     <div className="mb-4">
-     <label className="text-xs text-foreground mb-2 block">Дата и время</label>
+     <label className="text-sm text-foreground mb-2 block">Дата и время</label>
      <div className="flex gap-2">
       <input
        type="date"
@@ -204,12 +220,12 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
       const sid = matchShiftIdForTimestamp(new Date(datetime).toISOString(), shifts);
       const s = shifts.find((x) => x.id === sid);
       if (!linkToShift) {
-       return <p className="text-xs text-muted-foreground mt-1">Без привязки к смене</p>;
+       return <p className="text-sm text-muted-foreground mt-1">Без привязки к смене</p>;
       }
       return sid ? (
-       <p className="text-xs text-green-700 mt-1 font-medium">→ Смена: {s?.openTime ?? sid}</p>
+       <p className="text-sm text-green-700 mt-1 font-medium">→ Смена: {s?.openTime ?? sid}</p>
       ) : (
-       <p className="text-xs text-amber-600 mt-1">Не попадает ни в одну смену (смена не будет указана)</p>
+       <p className="text-sm text-amber-600 mt-1">Не попадает ни в одну смену (смена не будет указана)</p>
       );
      })()}
     </div>
@@ -228,7 +244,7 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
 
     {/* Note */}
     <div className="mb-6">
-     <label className="text-xs text-foreground mb-2 block">Комментарий</label>
+     <label className="text-sm text-foreground mb-2 block">Комментарий</label>
      <input
       type="text"
       className="w-full px-3 py-2 border rounded-lg text-sm bg-background outline-none focus:border-primary transition-colors"
@@ -239,19 +255,19 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
      />
     </div>
 
-    <div className="flex gap-2">
+    <div className="flex gap-2 justify-end">
+     <button
+      onClick={onClose}
+      className="px-5 py-2.5 border rounded-lg bg-background text-sm hover:bg-secondary transition-colors"
+     >
+      Закрыть
+     </button>
      <button
       onClick={handleSave}
       disabled={addTx.isPending}
-      className="flex-1 py-2.5 bg-foreground text-background rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+      className="px-8 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-all disabled:opacity-50 active:shadow-[inset_0_1px_3px_rgba(0,0,0,.2)]"
      >
-      {addTx.isPending ? 'Сохранение...' : 'Сохранить'}
-     </button>
-     <button
-      onClick={onClose}
-      className="px-5 py-2.5 border-2 rounded-xl font-bold text-sm hover:bg-secondary transition-colors"
-     >
-      Отмена
+      {addTx.isPending ? 'Добавление...' : 'Добавить'}
      </button>
     </div>
   </Modal>
@@ -295,10 +311,10 @@ export function Transactions() {
     <h2 className="text-2xl font-bold">Транзакции</h2>
     <button
      onClick={() => setShowModal(true)}
-     className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm cursor-pointer hover:bg-green-700 transition-colors"
+     className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm cursor-pointer font-medium hover:bg-primary/80 transition-colors"
     >
      <Plus className="w-4 h-4" />
-     Добавить
+     Добавить транзакцию
     </button>
    </div>
 
@@ -310,28 +326,33 @@ export function Transactions() {
 
    {isLoading && <p className="text-sm text-muted-foreground">Загрузка...</p>}
    {!isLoading && !isError && txs.length === 0 && (
-    <div className="text-sm text-muted-foreground py-8 text-center space-y-2 max-w-lg mx-auto">
-     <p>Нет транзакций для заведения с id:</p>
-     <p className="font-mono text-xs break-all text-foreground">{VENUE_ID}</p>
-     <p className="text-xs leading-relaxed">
-      Если POS пишет в другой <code className="text-foreground">venue_id</code>, выставьте{' '}
-      <code className="text-foreground">VITE_VENUE_ID</code> как у POS. Если в SQL строки есть, а здесь пусто —
-      проверьте RLS на <code className="text-foreground">cash_transactions</code> (SELECT для anon/authenticated).
-     </p>
+    <div className="max-w-4xl">
+    <table className="table-fixed border-separate border-spacing-0 w-full">
+     <tbody>
+      <tr><td>
+       <EmptyState
+        title="Транзакций пока нет"
+        hint="Добавьте первую транзакцию — приход, расход или инкассацию"
+        action={{ label: 'Добавить транзакцию', onClick: () => setShowModal(true) }}
+       />
+      </td></tr>
+     </tbody>
+    </table>
     </div>
    )}
 
    {groups.length > 0 && (
-    <table className="w-full table-fixed border-separate border-spacing-0">
-     <thead>
-      <tr className="text-sm font-semibold text-foreground">
-       <th scope="col" className="text-left py-3 px-3 w-[160px]">Дата</th>
-       <th scope="col" className="text-left py-3 px-3 w-[140px]">Смена</th>
-       <th scope="col" className="text-left py-3 px-3 w-[140px]">Тип</th>
-       <th scope="col" className="text-right py-3 px-3 w-[130px]">Сумма</th>
-       <th scope="col" className="text-left py-3 px-3 w-[220px]">Комментарий</th>
-       <th scope="col" className="w-[80px]" />
-       <th scope="col" className="w-[36px]" />
+    <div className="max-w-4xl">
+    <table className="table-fixed border-separate border-spacing-0 w-full">
+     <thead className="sticky top-0 z-10 bg-background">
+      <tr className="text-sm font-medium text-foreground">
+       <th scope="col" className="text-left font-medium py-1.5 px-3 w-[160px]">Дата</th>
+       <th scope="col" className="text-left font-medium py-1.5 px-3 w-[140px]">Смена</th>
+       <th scope="col" className="text-left font-medium py-1.5 px-3 w-[140px]">Тип</th>
+       <th scope="col" className="text-right font-medium py-1.5 px-3 w-[130px]">Сумма</th>
+       <th scope="col" className="text-left font-medium py-1.5 px-3">Комментарий</th>
+       <th scope="col" className="py-1.5 w-[56px]" />
+       <th scope="col" className="py-1.5 w-[56px] pr-3" />
       </tr>
      </thead>
      <tbody>
@@ -341,14 +362,14 @@ export function Transactions() {
         return (
         <tr
          key={tx.id}
-         className="group border-t border-border hover:bg-muted/30 transition-colors"
+         className="group hover:bg-black/[0.03] transition-colors"
         >
-         <td className="py-2 px-3 text-sm">
+         <td className="py-1.5 px-3 text-sm">
           {idx === 0 ? (
            <span className="text-sm text-foreground">{dateLabel}</span>
           ) : null}
          </td>
-         <td className="py-2 px-3 text-sm min-w-0">
+         <td className="py-1.5 px-3 text-sm min-w-0">
           {tx.shift_id ? (
            shift ? (
            <Link
@@ -361,7 +382,7 @@ export function Transactions() {
            ) : (
             <Link
              to={`/cash-shifts?shift=${tx.shift_id}`}
-             className="text-primary hover:text-primary/70 text-xs truncate block"
+             className="text-primary hover:text-primary/70 text-sm truncate block"
              title="Смена"
             >
              Открыть смену
@@ -371,32 +392,26 @@ export function Transactions() {
            <span>—</span>
           )}
          </td>
-         <td className="py-2 px-3">
+         <td className="py-1.5 px-3">
           <span className="text-sm">
            {TYPE_LABELS[tx.type]}
           </span>
           {tx.category_id && catMap[tx.category_id] && (
-           <span className="block text-xs truncate">{catMap[tx.category_id]}</span>
+           <span className="block text-sm truncate">{catMap[tx.category_id]}</span>
           )}
          </td>
          <td
-          className={`py-2 px-3 text-sm text-right tabular-nums ${TYPE_COLOR[tx.type]}`}
+          className={`py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap ${TYPE_COLOR[tx.type]}`}
          >
           {formatCurrency(tx.amount)}
          </td>
-         <td className="py-2 px-3 text-sm">
-          <div className="truncate">{tx.note || '—'}</div>
+         <td className="py-1.5 px-3 text-sm">
+          <div className="truncate">{tx.note?.trim() ? humanizeNote(tx.note) : '—'}</div>
          </td>
-         <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-           type="button"
-           onClick={() => setEditTx(tx)}
-           className="text-xs font-semibold text-primary hover:text-primary/70 transition-colors cursor-pointer"
-          >
-           Изменить
-          </button>
+         <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
+          <EditButton onClick={() => setEditTx(tx)} />
          </td>
-         <td className="py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity">
+         <td className="py-1.5 pr-4 opacity-40 group-hover:opacity-100 transition-opacity">
           <DeleteButton onClick={() => deleteTx.mutate(tx.id)} />
          </td>
         </tr>
@@ -404,7 +419,8 @@ export function Transactions() {
        })
       )}
      </tbody>
-    </table>
+     </table>
+    </div>
    )}
   </div>
  );

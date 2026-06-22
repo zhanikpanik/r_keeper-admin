@@ -8,6 +8,20 @@ import { useWarehouses } from '@/hooks/useMenuData';
 import { useCreateWarehouse, useRenameWarehouse, useDeleteWarehouse } from '@/hooks/useWarehouse';
 import { useActiveShift } from '@/hooks/useShiftsData';
 import { toast } from 'sonner';
+import { SvgIcon } from '@/components/dashboard/SvgIcon';
+import iconOverview from '@/assets/icons/eye.svg?raw';
+import iconSales from '@/assets/icons/wallet.svg?raw';
+import iconMenu from '@/assets/icons/tableware.svg?raw';
+import iconWarehouse from '@/assets/icons/warehouse.svg?raw';
+import iconManagement from '@/assets/icons/wrench.svg?raw';
+
+const GROUP_ICONS: Record<string, string> = {
+  '/overview': iconOverview,
+  '/sales': iconSales,
+  '/menu': iconMenu,
+  '/warehouse': iconWarehouse,
+  '/management': iconManagement,
+};
 
 interface NavItem {
  to: string;
@@ -16,13 +30,18 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
- { to: '/', label: 'Дашборд' },
- { to: '/analytics', label: 'Аналитика' },
  {
-  to: '/finances', label: 'Финансы',
+  to: '/overview', label: 'Обзор',
+  children: [
+   { to: '/', label: 'Дашборд' },
+   { to: '/analytics', label: 'Аналитика' },
+  ],
+ },
+ {
+  to: '/sales', label: 'Продажи',
   children: [
    { to: '/cash-shifts', label: 'Кассовые смены' },
-   { to: '/transactions', label: 'Транзакции' },
+   { to: '/transactions', label: 'Журнал' },
    { to: '/checks', label: 'Чеки' },
   ],
  },
@@ -35,21 +54,21 @@ const navItems: NavItem[] = [
   ],
  },
  {
-  to: '/restaurant', label: 'Ресторан',
-  children: [
-   { to: '/staff', label: 'Сотрудники' },
-   { to: '/floor-plan', label: 'Схема зала' },
-  ],
- },
- {
   to: '/warehouse', label: 'Склад',
   children: [
    { to: '/warehouse/operations', label: 'Все операции' },
-   { to: '/warehouse/inventory', label: 'Инвентаризации' },
+   { to: '/warehouse/inventory', label: 'Переучёт' },
   ],
  },
- { to: '/import', label: 'Импорт' },
- { to: '/settings', label: 'Настройки' },
+ {
+  to: '/management', label: 'Управление',
+  children: [
+   { to: '/staff', label: 'Сотрудники' },
+   { to: '/floor-plan', label: 'Схема зала' },
+   { to: '/import', label: 'Импорт' },
+   { to: '/settings', label: 'Настройки' },
+  ],
+ },
 ];
 
 export function Layout() {
@@ -120,11 +139,11 @@ export function Layout() {
  }
 
  const isChildActive = (item: NavItem) => {
-  return item.children?.some((child) =>
-   child.to === item.to
-    ? location.pathname === item.to
-    : location.pathname.startsWith(child.to)
-  );
+  return item.children?.some((child) => {
+   if (child.to === '/') return location.pathname === '/';
+   if (child.to === item.to) return location.pathname === item.to;
+   return location.pathname.startsWith(child.to);
+  });
  };
 
  return (
@@ -158,10 +177,13 @@ export function Layout() {
         <div key={item.to}>
          <div
           className={cn(
-           'px-2 py-1 rounded text-xs font-medium',
+           'flex items-center gap-0.5 px-2 py-1 rounded text-sm font-medium',
            isActive ? 'text-[#37352f]' : 'text-[#9b9a97]'
           )}
          >
+          {GROUP_ICONS[item.to] && (
+           <SvgIcon raw={GROUP_ICONS[item.to]} className="w-6 h-6" />
+          )}
           {item.label}
          </div>
 
@@ -170,7 +192,7 @@ export function Layout() {
            <NavLink
             key={child.to}
             to={child.to}
-            end={child.to === '/menu'}
+            end={child.to === '/' || child.to === '/menu'}
             className={({ isActive }) =>
              cn(
               'block px-2 py-1 rounded text-sm transition-colors',
@@ -249,24 +271,6 @@ export function Layout() {
         </div>
        );
       }
-
-      return (
-       <NavLink
-        key={item.to}
-        to={item.to}
-        end={item.to === '/'}
-        className={({ isActive }) =>
-         cn(
-          'block px-2 py-1 rounded text-sm transition-colors',
-          isActive
-           ? 'bg-[#efefee] text-[#37352f]'
-           : 'text-[#37352f] hover:bg-[#efefee]'
-         )
-        }
-       >
-        {item.label}
-       </NavLink>
-      );
      })}
     </nav>
 
