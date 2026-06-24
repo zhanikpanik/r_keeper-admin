@@ -67,7 +67,7 @@ export function Import() {
       <thead className="sticky top-0 z-10 bg-background">
        <tr className="bg-muted/50">
         {preview.headers.map((h, i) => (
-         <th key={i} className="text-left py-1.5 px-3 font-semibold">
+         <th key={i} className="text-left py-1.5 font-semibold">
           {h || `Col ${i + 1}`}
          </th>
         ))}
@@ -77,7 +77,7 @@ export function Import() {
        {preview.rows.map((row, ri) => (
         <tr key={ri} className="even:bg-muted/20">
          {preview.headers.map((_, ci) => (
-          <td key={ci} className="py-1.5 px-3">
+          <td key={ci} className="py-1.5">
            {row[ci] ?? ''}
           </td>
          ))}

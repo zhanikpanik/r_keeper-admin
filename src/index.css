@@ -104,6 +104,31 @@ body {
   font-family: 'Onest', system-ui, -apple-system, sans-serif;
 }
 
+/* Override browser default bold on <th> — use medium (500) for consistency */
+th {
+  font-weight: 500;
+}
+
+/* ─── Table row hover — bg on cells, 12px extension via box-shadow on edges ─── */
+.row-hover:hover td {
+  background: rgba(0, 0, 0, 0.03);
+}
+.row-hover:hover td:first-child {
+  box-shadow: -12px 0 0 0 rgba(0, 0, 0, 0.03);
+}
+.row-hover:hover td:last-child {
+  box-shadow: 12px 0 0 0 rgba(0, 0, 0, 0.03);
+}
+
+/* ─── Flex row hover — same 12px extension for non-table rows ─── */
+.flex-row-hover {
+  transition: background 150ms, box-shadow 150ms;
+}
+.flex-row-hover:hover {
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: -12px 0 0 0 rgba(0, 0, 0, 0.03), 12px 0 0 0 rgba(0, 0, 0, 0.03);
+}
+
 @layer base {
   button {
     cursor: pointer;

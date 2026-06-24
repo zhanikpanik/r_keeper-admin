@@ -91,7 +91,7 @@ export function StockCorrection({ items, onSaved }: Props) {
                   placeholder="0"
                   className="w-16 px-1.5 py-0.5 text-sm border border-border rounded bg-background tabular-nums focus:outline-none focus:border-primary"
                 />
-                <span className="text-xs text-muted-foreground">{item.unit}</span>
+                <span className="text-sm text-muted-foreground">{item.unit}</span>
                 <button
                   type="button"
                   onClick={() => handleSave(item)}
@@ -107,7 +107,7 @@ export function StockCorrection({ items, onSaved }: Props) {
             )}
 
             {edit.error && (
-              <span className="text-xs text-destructive shrink-0">{edit.error}</span>
+              <span className="text-sm text-destructive shrink-0">{edit.error}</span>
             )}
           </div>
         );

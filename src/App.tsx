@@ -13,6 +13,7 @@ import { Menu } from '@/pages/Menu';
 import { Staff } from '@/pages/Staff';
 import { FloorPlan } from '@/pages/FloorPlan';
 import { DesignPage } from '@/pages/DesignPage';
+import { CommandBarDemo } from '@/pages/CommandBarDemo';
 import { CashShifts } from '@/pages/CashShifts';
 import { Transactions } from '@/pages/Transactions';
 import { Checks } from '@/pages/Checks';
@@ -136,6 +137,7 @@ function App() {
          <Route path="/settings" element={<SettingsPage />} />
          <Route path="/design" element={<DesignPage />} />
         </Route>
+        <Route path="/design/command-bar" element={<CommandBarDemo />} />
        </Route>
       </Routes>
      </Suspense>

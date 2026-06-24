@@ -11,12 +11,10 @@ interface AlertCardProps {
   actionHref: string | null;
   onDismiss: () => void;
   onAction?: () => void;
-  /** Контекстная иконка (lucide) */
   icon?: LucideIcon;
-  /** Контекстная иконка (кастомный SVG raw) — приоритет над icon */
   iconRaw?: string;
-  /** Render as a row inside a shared container (no bg, no radius) */
   grouped?: boolean;
+  variant?: 'chip';
 }
 
 const severityFallback = {
@@ -31,11 +29,54 @@ const severityColor = {
   info: 'text-info',
 };
 
-export function AlertCard({ type, message, actionLabel, actionHref, onDismiss, onAction, icon, iconRaw, grouped }: AlertCardProps) {
+const severityDot = {
+  critical: 'bg-destructive',
+  warning: 'bg-warning',
+  info: 'bg-muted-foreground',
+};
+
+export function AlertCard({
+  type, message, actionLabel, actionHref, onDismiss, onAction,
+  icon, iconRaw, grouped, variant,
+}: AlertCardProps) {
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;
 
+  // ── Chip variant: цветная точка + текст + ×, без фона-обёртки ──
+  if (variant === 'chip') {
+    const chipContent = (
+      <>
+        <span className={cn('w-2 h-2 rounded-full shrink-0', severityDot[type])} />
+        <span className="text-sm text-foreground">{message}</span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); setDismissed(true); onDismiss(); }}
+          className="shrink-0 rounded-sm opacity-40 hover:opacity-70 transition-opacity"
+          aria-label="Скрыть"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </>
+    );
+
+    const chipClasses = cn(
+      'inline-flex items-center gap-1.5 mr-2.5 mb-2',
+      'transition-opacity cursor-pointer select-none',
+      'hover:opacity-70',
+    );
+
+    if (actionHref) {
+      return (
+        <Link to={actionHref} className={chipClasses}>
+          {chipContent}
+        </Link>
+      );
+    }
+    return <span className={chipClasses}>{chipContent}</span>;
+  }
+
+  // ── Default / grouped variant ──
   const IconComponent: LucideIcon = icon || severityFallback[type];
 
   const actionElement = onAction ? (
@@ -57,9 +98,9 @@ export function AlertCard({ type, message, actionLabel, actionHref, onDismiss, o
 
   return (
     <div className={cn(
-      'flex items-center gap-2',
+      'inline-flex items-center gap-2',
       grouped
-        ? 'px-4 py-2'
+        ? 'px-2 py-1.5 mr-1.5 mb-1.5'
         : 'bg-[#EFF1F3] rounded-xl px-4 py-4'
     )}>
       {iconRaw ? (
@@ -68,7 +109,7 @@ export function AlertCard({ type, message, actionLabel, actionHref, onDismiss, o
         <IconComponent className={cn('w-10 h-10 shrink-0', severityColor[type])} />
       )}
 
-      <span className="text-sm text-foreground flex-1 min-w-0 truncate">
+      <span className="text-sm text-foreground min-w-0 truncate">
         {message}
       </span>
 

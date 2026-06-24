@@ -30,7 +30,7 @@ export interface Check {
   tableNumber: string;
   waiter: string;
   paymentMethod: 'cash' | 'card' | 'none';
-  status: 'open' | 'closed';
+  status: 'open' | 'closed' | 'cancelled';
   openedAt: string;
   closedAt: string;
   paid: number;
@@ -173,7 +173,7 @@ function mapOrderToCheck(
     tableNumber: o.table_number || '—',
     waiter: orderWaiterName(o.users),
     paymentMethod: method === 'cash' || method === 'card' ? method : 'none',
-    status: o.status === 'active' || o.status === 'alert' ? 'open' : 'closed',
+    status: o.status === 'active' || o.status === 'alert' ? 'open' : o.status === 'cancelled' ? 'cancelled' : 'closed',
     openedAt: o.opened_at,
     closedAt: o.closed_at || '',
     paid,

@@ -5,18 +5,25 @@ export interface Trend {
   prevPeriod: number;
 }
 
-/** Одна KPI-карточка */
+/** Одна KPI-карточка — двухэтажная (сегодня + период) */
 export interface Metric {
   label: string;
-  value: number;
-  format: 'som' | 'count';
-  trend: Trend | null;
+  /** Сегодня (крупно, жирно) */
+  todayValue: number;
+  /** За выбранный период (мельче, muted) */
+  periodValue: number;
+  format: 'som' | 'count' | 'percent';
+  /** Тренд сегодня vs вчера */
+  todayTrend: Trend | null;
   /** Пояснение к значению (tooltip) */
   tooltip?: string;
 }
 
 /** Тип алерта */
 export type AlertType = 'critical' | 'warning' | 'info';
+
+/** Срочность алерта — для группировки на дашборде */
+export type AlertUrgency = 'urgent' | 'important' | 'background';
 
 /** Один алерт на дашборде — проблема + целевое действие */
 export interface Alert {
@@ -27,8 +34,10 @@ export interface Alert {
   actionLabel: string | null;
   /** Куда ведёт кнопка */
   actionHref: string | null;
-  /** Домен для группировки: 'warehouse' | 'checks' | 'cash' | 'staff' */
+  /** Домен: 'warehouse' | 'checks' | 'cash' | 'staff' */
   domain: string;
+  /** Срочность: urgent / important / background */
+  urgency: AlertUrgency;
 }
 
 /** Группа алертов по severity — для фазы «много проблем» */
@@ -50,64 +59,57 @@ export interface MigrationCard {
   problems: string[];
   contextMessage: string;
   actionLabel: string;
-  actionHref?: string;
+  actionHref: string;
   actionType: MigrationActionType;
-  /** Граничная дата для baseline */
   baselineDate: string;
 }
 
-/** Тип события в хронологии — для выбора иконки */
-export type ChronologyEventType = 'shift_open' | 'expense' | 'delivery' | 'write_off';
+export const ALERT_GROUP_THRESHOLD = 8;
 
-/** Одно событие в хронологии дня */
+/** Одно событие в ленте хронологии */
 export interface ChronologyEvent {
   id: string;
   time: string;
   actor: string;
   action: string;
-  /** Детали (сумма, количество, поставщик) */
   detail: string | null;
-  /** Если событие требует действия менеджера — кнопка */
-  actionLabel: string | null;
-  actionHref: string | null;
-  /** Тип события (для выбора иконки) */
-  type?: ChronologyEventType;
+  actionLabel?: string;
+  actionHref?: string;
+  type: 'shift_open' | 'order_new' | 'order_paid' | 'expense' | 'delivery' | 'write_off' | 'transfer' | 'inventory';
 }
 
-/** Ингредиент под угрозой — с привязкой к блюдам */
+/** Угроза склада: ингредиент на исходе + какие блюда под угрозой */
 export interface WarehouseThreat {
+  productId: string;
   name: string;
-  remaining: string;
-  daysLeft: number | null; // null = неизвестно (пока consumption не работает)
-  level: 'critical' | 'warning';
-  /** Блюда, которые под угрозой */
+  quantity: number;
+  unit: string;
   affectedDishes: string[];
-  /** Склад, на котором лежит ингредиент */
-  warehouseName: string | null;
-  /** Минусовой остаток */
+  affectedDishCount: number;
+  /** Internal: formatted string like "2.3 кг" */
+  remaining?: string;
+  /** Internal: estimated days left */
+  daysLeft?: number | null;
+  /** Internal: severity level */
+  level?: 'critical' | 'warning';
+  /** Internal: warehouse name */
+  warehouseName?: string | null;
+  /** Internal: is stock negative */
   negative?: boolean;
-  /** Последняя поставка: дата + количество */
-  lastDelivery: string | null;
+  /** Internal: last delivery info */
+  lastDelivery?: string | null;
 }
 
-/** Статус текущей смены (для алерта) */
-export interface ShiftAlertStatus {
-  isOpen: boolean;
-  openedAt: string | null;
-  hoursOpen: number | null;
-  cashier: string | null;
-}
-
-/** Корневая модель дашборда */
+/** Сводка за вчера */
 export interface YesterdaySummary {
   revenue: number | null;
   checks: number | null;
-  shiftClosed: boolean | null;
+  shiftClosed: string | null;
   cashDifference: number | null;
-  /** 'normal' | 'dayoff' | 'unavailable' */
-  status: 'normal' | 'dayoff' | 'unavailable';
+  status: 'normal' | 'unavailable';
 }
 
+/** Топ-блюдо */
 export interface TopDish {
   name: string;
   qty: number;
@@ -116,56 +118,66 @@ export interface TopDish {
   margin: number;
 }
 
-export interface OperationalResult {
-  revenue: number;
-  expenses: number;
-  writeOffs: number;
-  net: number;
+/** Сводка вчерашней смены */
+export interface YesterdayShift {
+  closed: boolean;
+  revenue: number | null;
+  checks: number | null;
+  cashDifference: number | null;
+  closedAt: string | null;
 }
 
-/** Ингредиент с отрицательным остатком — для inline-корректировки */
+/** Группировка алертов по срочности */
+export interface AlertUrgencyGroups {
+  urgent: Alert[];
+  important: Alert[];
+  background: Alert[];
+}
+
+/** Элемент отрицательного стока для быстрой коррекции */
 export interface NegativeStockItem {
   productId: string;
-  productName: string;
+  name: string;
   quantity: number;
   unit: string;
-  warehouseId: string;
-  warehouseName: string | null;
+  warehouse: string;
+  /** Alternative field name used in hook */
+  productName?: string;
+  /** Alternative field name used in hook */
+  warehouseId?: string;
+  /** Alternative field name used in hook */
+  warehouseName?: string | null;
 }
 
+/** Данные дашборда */
 export interface DashboardData {
   metrics: Metric[];
   alerts: Alert[];
-  /** Сгруппированные алерты — когда их > ALERT_GROUP_THRESHOLD */
   alertGroups: AlertGroup[] | null;
-  /** Всего алертов (для health bar) */
+  alertUrgencyGroups: AlertUrgencyGroups;
   totalAlertCount: number;
-  /** Критических алертов */
   criticalCount: number;
   chronology: ChronologyEvent[];
   warehouseThreats: WarehouseThreat[];
-  shiftStatus: ShiftAlertStatus;
+  shiftStatus: {
+    isOpen: boolean;
+    openedAt: string | null;
+    hoursOpen: number | null;
+    cashier: string | null;
+  };
+  yesterdayShift: YesterdayShift | null;
   yesterday: YesterdaySummary;
   topDishes: TopDish[];
-  /** true если сегодня нет оплаченных заказов */
   isTodayEmpty: boolean;
-  /** Выручка за 7 дней (для фолбека) */
   weekRevenue: number;
-  /** Чеков за 7 дней (для фолбека) */
   weekChecks: number;
-  /** Анти-топ: блюда с отрицательной или низкой маржой (за месяц) */
   antiTop: TopDish[];
-  /** Карточки миграции — только при переходе с Poster */
   migrationCards: MigrationCard[];
-  /** Метка периода для хронологии: «сегодня», «неделя», «месяц» */
   periodLabel: string;
-  /** Сырые данные минусовых остатков для inline-корректировки */
   negativeStockItems: NegativeStockItem[];
-  /** Общая себестоимость проданных блюд за период (сом) */
   foodCost: number;
-  /** Дневная выручка за последние 7 дней (для спарклайна) */
   dailyRevenues: number[];
+  dailyChecks: number[];
+  dailyAvgChecks: number[];
+  dailyExpenses: number[];
 }
-
-/** Порог: больше этого числа — алерты группируются */
-export const ALERT_GROUP_THRESHOLD = 5;

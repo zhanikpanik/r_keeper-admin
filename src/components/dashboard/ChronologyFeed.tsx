@@ -19,7 +19,7 @@ export function ChronologyFeed({ events, title = 'События' }: ChronologyF
   if (events.length === 0) {
     return (
       <div>
-        <h2 className="text-base font-medium text-foreground mb-1">{title}</h2>
+        <h2 className="text-sm font-medium text-foreground mb-1">{title}</h2>
         <p className="text-sm text-muted-foreground">За сегодня событий нет</p>
       </div>
     );
@@ -27,7 +27,7 @@ export function ChronologyFeed({ events, title = 'События' }: ChronologyF
 
   return (
     <div>
-      <h2 className="text-base font-medium text-foreground mb-3">{title}</h2>
+      <h2 className="text-sm font-medium text-foreground mb-3">{title}</h2>
 
       <div>
         {events.map((event, i) => {
@@ -39,7 +39,6 @@ export function ChronologyFeed({ events, title = 'События' }: ChronologyF
             key={event.id}
             className={cn(
               'flex items-baseline gap-2 flex-wrap py-2',
-              i < events.length - 1 ? 'border-b border-border/30' : '',
             )}
           >
             <div className="flex items-center gap-2 shrink-0">

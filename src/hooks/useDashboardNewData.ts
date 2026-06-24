@@ -1,41 +1,25 @@
 /**
- * ═══ РЕАЛЬНОСТЬ ДАННЫХ (Δλ Шаг 1) ═══
+ * ═══ ДАШБОРД — НОВАЯ СТРУКТУРА ═══
  *
- * В кофейне Alto Coffee (Бишкек) бариста открывают смену, принимают заказы
- * от посетителей и готовят напитки по технологическим картам. Кассир фиксирует
- * приход и расход наличных. Кладовщик принимает поставки, списывает продукты,
- * проводит инвентаризации.
- *
- * Менеджер несколько раз в день открывает дашборд чтобы за 3 секунды понять:
- * всё ли в порядке? Если нет — какая конкретно проблема и что с ней делать?
- *
- * Частица данных: событие с денежным следом (заказ, кассовая операция,
- * складское движение). У каждого события: что, когда, сколько денег,
- * к какому домену относится (касса / склад / чеки).
- *
- * Три фазы дашборда:
- *   Фаза 1 (Импорт): миграционные карточки — провести за руку через чистку
- *   Фаза 2 (Чистка): алерты тают, прогресс виден
- *   Фаза 3 (Работа): спокойное состояние — выручка, хронология, нет красного
- *
- * Алерты группируются по ДОМЕНАМ (Склад / Касса / Чеки), не по severity.
- * Info-алерты (dead dishes, dead ingredients) — не daily, убраны.
- * Stock-алерты (negative/zero/low) объединены в один с раскрытием.
+ * Два ряда KPI: Сегодня (с дельтой к прошлой неделе) + За период (со спарклайнами).
+ * 5 метрик: Выручка, Чеков, Ср. чек, Расходы, Фудкост.
+ * Алерты группируются по СРОЧНОСТИ: urgent / important / background.
+ * «Вчерашняя смена» — отдельный блок, не внутри KPI.
  */
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase, VENUE_ID } from '@/lib/supabase';
 import type {
-  DashboardData, Metric, Alert, AlertGroup, ChronologyEvent,
-  WarehouseThreat, YesterdaySummary, TopDish,
-  MigrationCard, NegativeStockItem,
+  DashboardData, Metric, Alert, AlertGroup, AlertUrgency, AlertUrgencyGroups,
+  ChronologyEvent, WarehouseThreat, YesterdaySummary, TopDish,
+  MigrationCard, NegativeStockItem, YesterdayShift,
 } from '@/types/dashboard';
 import { ALERT_GROUP_THRESHOLD } from '@/types/dashboard';
 
 export type DashboardPeriod = 'today' | 'week' | 'month';
 
 function fmtSom(n: number): string {
-  return n.toLocaleString('ru-RU');
+  return Math.round(n).toLocaleString('ru-RU');
 }
 
 const CASH_NOTE_LABELS: Record<string, string> = {
@@ -54,16 +38,29 @@ function humanizeCashNote(note: string | null): string {
   return CASH_NOTE_LABELS[trimmed] || trimmed.replace(/_/g, ' ');
 }
 
-function getPeriodRange(period: DashboardPeriod) {
+function getPeriodRange(period: DashboardPeriod, offset: number = 0) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   switch (period) {
     case 'today':
       return { start: today.toISOString(), end: new Date(today.getTime() + 86400000).toISOString() };
-    case 'week':
-      return { start: new Date(today.getTime() - 7 * 86400000).toISOString(), end: new Date(today.getTime() + 86400000).toISOString() };
-    case 'month':
-      return { start: new Date(today.getFullYear(), today.getMonth(), 1).toISOString(), end: new Date(today.getTime() + 86400000).toISOString() };
+    case 'week': {
+      const refDate = new Date(today.getTime() + offset * 7 * 86400000);
+      return {
+        start: new Date(refDate.getTime() - 7 * 86400000).toISOString(),
+        end: new Date(refDate.getTime() + 86400000).toISOString(),
+      };
+    }
+    case 'month': {
+      const refMonth = today.getMonth() + offset;
+      const refYear = today.getFullYear() + Math.floor(refMonth / 12);
+      const normalizedMonth = ((refMonth % 12) + 12) % 12;
+      const start = new Date(refYear, normalizedMonth, 1);
+      const end = offset === 0
+        ? new Date(today.getTime() + 86400000)
+        : new Date(refYear, normalizedMonth + 1, 0, 23, 59, 59, 999);
+      return { start: start.toISOString(), end: end.toISOString() };
+    }
   }
 }
 
@@ -75,7 +72,6 @@ function getPeriodLabel(period: DashboardPeriod): string {
   }
 }
 
-/** Get baseline date from localStorage — problems before this date are hidden */
 function getBaselineDate(): string | null {
   try {
     return localStorage.getItem('rkeeper_baseline_date');
@@ -84,7 +80,6 @@ function getBaselineDate(): string | null {
   }
 }
 
-/** Build migration cards when domains have >10 problems before baseline */
 function buildMigrationCards(
   negativeStockCount: number,
   zeroStockCount: number,
@@ -93,13 +88,11 @@ function buildMigrationCards(
   shiftsWithDiscrepancy: number,
 ): MigrationCard[] {
   const baseline = getBaselineDate();
-  // If user already set a baseline, no migration cards needed
   if (baseline) return [];
 
   const cards: MigrationCard[] = [];
-  const baselineDate = '2026-06-01'; // default boundary for imported Poster data
+  const baselineDate = '2026-06-01';
 
-  // Warehouse migration — negative or zero stock in bulk
   const warehouseProblems = negativeStockCount + zeroStockCount;
   if (warehouseProblems >= 3) {
     cards.push({
@@ -118,7 +111,6 @@ function buildMigrationCards(
     });
   }
 
-  // Checks migration — anomalous or zero-amount checks in bulk
   const checkProblems = anomalousChecks + zeroAmountChecks;
   if (checkProblems >= 5) {
     cards.push({
@@ -129,7 +121,7 @@ function buildMigrationCards(
         ...(anomalousChecks > 0 ? [`${anomalousChecks} аномально больших чеков`] : []),
         ...(zeroAmountChecks > 0 ? [`${zeroAmountChecks} чеков с нулевой суммой`] : []),
       ],
-      contextMessage: 'Импортированные чеки могут содержать ошибки. После проверки промаркируйте всё до 01.06.2026 — алерты по старым чекам уйдут.',
+      contextMessage: 'Импортированные чеки могут содержать ошибки. После проверки промаркируйте всё до 01.06.2026.',
       actionLabel: 'Смотреть чеки',
       actionHref: '/checks',
       actionType: 'mark_checked',
@@ -137,14 +129,13 @@ function buildMigrationCards(
     });
   }
 
-  // Cash shifts migration
   if (shiftsWithDiscrepancy >= 3) {
     cards.push({
       id: 'migrate-cash',
       domain: 'Касса',
       problemCount: shiftsWithDiscrepancy,
       problems: [`${shiftsWithDiscrepancy} смен с расхождением`],
-      contextMessage: 'Старые смены из Poster. Закройте период — все смены до 01.06.2026 будут заархивированы и не повлияют на текущие алерты.',
+      contextMessage: 'Старые смены из Poster. Закройте период — все смены до 01.06.2026 будут заархивированы.',
       actionLabel: 'Закрыть период до 01.06',
       actionHref: '/cash-shifts',
       actionType: 'close_period',
@@ -155,7 +146,6 @@ function buildMigrationCards(
   return cards;
 }
 
-/** Group alerts by severity when there are many */
 function groupAlerts(alerts: Alert[]): AlertGroup[] | null {
   if (alerts.length <= ALERT_GROUP_THRESHOLD) return null;
 
@@ -165,34 +155,36 @@ function groupAlerts(alerts: Alert[]): AlertGroup[] | null {
 
   const groups: AlertGroup[] = [];
   if (critical.length > 0) {
-    groups.push({
-      severity: 'critical',
-      label: `КРИТИЧЕСКОЕ (${critical.length})`,
-      alerts: critical,
-      defaultExpanded: true,
-    });
+    groups.push({ severity: 'critical', label: `КРИТИЧЕСКОЕ (${critical.length})`, alerts: critical, defaultExpanded: true });
   }
   if (warning.length > 0) {
-    groups.push({
-      severity: 'warning',
-      label: `ПРЕДУПРЕЖДЕНИЯ (${warning.length})`,
-      alerts: warning,
-      defaultExpanded: false,
-    });
+    groups.push({ severity: 'warning', label: `ПРЕДУПРЕЖДЕНИЯ (${warning.length})`, alerts: warning, defaultExpanded: false });
   }
   if (info.length > 0) {
-    groups.push({
-      severity: 'info',
-      label: `ИНФОРМАЦИЯ (${info.length})`,
-      alerts: info,
-      defaultExpanded: false,
-    });
+    groups.push({ severity: 'info', label: `ИНФОРМАЦИЯ (${info.length})`, alerts: info, defaultExpanded: false });
   }
   return groups.length > 0 ? groups : null;
 }
 
-async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise<DashboardData> {
-  const { start, end } = getPeriodRange(period);
+/** Классификация алерта по срочности */
+function classifyUrgency(id: string, type: Alert['type']): AlertUrgency {
+  // СРОЧНО — блокирует работу
+  if (id.startsWith('shift-discrepancy')) return 'urgent';
+  if (id === 'stock' && type === 'critical') return 'urgent';
+  if (id.startsWith('yesterday-shift')) return 'urgent';
+  if (id.startsWith('yesterday-stuck')) return 'urgent';
+  // ВАЖНО — не горит, но требует внимания
+  if (id === 'stuck-orders') return 'important';
+  if (id.startsWith('suspicious-check')) return 'important';
+  if (id === 'many-refunds') return 'important';
+  if (id.startsWith('anomaly-delivery')) return 'important';
+  if (id === 'stock' && type !== 'critical') return 'important';
+  // ФОН
+  return 'background';
+}
+
+async function fetchDashboardNewData(period: DashboardPeriod = 'today', offset: number = 0): Promise<DashboardData> {
+  const { start, end } = getPeriodRange(period, offset);
   const baseline = getBaselineDate();
 
   const now = new Date();
@@ -212,7 +204,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
   const paidToday = (todayOrders || []).filter(o => o.status === 'paid');
   const openToday = (todayOrders || []).filter(o => o.status === 'active' || o.status === 'alert');
 
-  // All open orders (not just today — operational metric)
   const { count: openNowCount } = await supabase
     .from('orders')
     .select('id', { count: 'exact', head: true })
@@ -222,10 +213,25 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
 
   const todayRevenue = paidToday.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
   const todayChecks = paidToday.length;
-
   const todayOrderIds = paidToday.map(o => o.id);
 
-  // ═══ FALLBACK: last 7 days (for empty today state) ═══
+  // ═══ SAME DAY LAST WEEK (for trend comparison: Friday vs Friday) ═══
+  const sameDayLastWeekStart = new Date(todayStart.getTime() - 7 * 86400000);
+  const sameDayLastWeekEnd = new Date(sameDayLastWeekStart.getTime() + 86400000);
+
+  const { data: lastWeekSameDayOrders } = await supabase
+    .from('orders')
+    .select('total_amount')
+    .eq('venue_id', VENUE_ID)
+    .eq('status', 'paid')
+    .gte('opened_at', sameDayLastWeekStart.toISOString())
+    .lt('opened_at', sameDayLastWeekEnd.toISOString());
+
+  const lastWeekSameDayRevenue = (lastWeekSameDayOrders || []).reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
+  const lastWeekSameDayChecks = (lastWeekSameDayOrders || []).length;
+  const lastWeekSameDayAvgCheck = lastWeekSameDayChecks > 0 ? Math.round(lastWeekSameDayRevenue / lastWeekSameDayChecks) : 0;
+
+  // ═══ WEEK ORDERS (for sparkline) ═══
   const weekAgo = new Date(todayStart.getTime() - 7 * 86400000).toISOString();
   const { data: weekOrders } = await supabase
     .from('orders')
@@ -238,7 +244,16 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
   const weekRevenue = (weekOrders || []).reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
   const weekChecks = (weekOrders || []).length;
 
-  // ═══ YESTERDAY ═══
+  // ═══ DAILY EXPENSES (for sparkline) ═══
+  const { data: weekExpenses } = await supabase
+    .from('cash_movements')
+    .select('amount, occurred_at')
+    .eq('venue_id', VENUE_ID)
+    .eq('movement_type', 'float_out')
+    .gte('occurred_at', weekAgo)
+    .lt('occurred_at', new Date(todayStart.getTime() + 86400000).toISOString());
+
+  // ═══ YESTERDAY (for shift status, not for revenue comparison) ═══
   const { data: yesterdayOrders } = await supabase
     .from('orders')
     .select('total_amount')
@@ -250,7 +265,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
   const yesterdayRevenue = (yesterdayOrders || []).reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0);
   const yesterdayChecks = (yesterdayOrders || []).length;
 
-  // ═══ PERIOD (for week/month view) ═══
+  // ═══ PERIOD ═══
   let periodRevenue = todayRevenue;
   let periodChecks = todayChecks;
   let periodOrderIds = todayOrderIds;
@@ -269,7 +284,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     periodOrderIds = (periodOrders || []).map(o => o.id);
   }
 
-  // Previous period for trend
+  // Previous period for sparkline trend comparison
   const prevStart = period === 'today' ? yesterdayStart : period === 'week'
     ? new Date(todayStart.getTime() - 14 * 86400000).toISOString()
     : new Date(todayStart.getFullYear(), todayStart.getMonth() - 1, 1).toISOString();
@@ -306,6 +321,43 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     ? (Date.now() - new Date(activeShift.opened_at).getTime()) / (1000 * 60 * 60)
     : 0;
 
+  // ═══ YESTERDAY SHIFT STATUS ═══
+  let yesterdayShiftData: YesterdayShift | null = null;
+
+  const { data: yestShift } = await supabase
+    .from('shifts')
+    .select('id, closed_at, cash_difference_at_close, opened_at')
+    .eq('venue_id', VENUE_ID)
+    .gte('opened_at', yesterdayStart)
+    .lt('opened_at', yesterdayEnd)
+    .order('opened_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (yestShift) {
+    const isClosed = yestShift.closed_at != null;
+    const diff = Number(yestShift.cash_difference_at_close) || 0;
+
+    yesterdayShiftData = {
+      closed: isClosed,
+      revenue: yesterdayRevenue || null,
+      checks: yesterdayChecks || null,
+      cashDifference: isClosed ? diff : null,
+      closedAt: yestShift.closed_at as string | null,
+    };
+  }
+
+  // ═══ YESTERDAY STUCK ORDERS ═══
+  const { data: yesterdayStuck } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('venue_id', VENUE_ID)
+    .in('status', ['active', 'alert'])
+    .gte('opened_at', yesterdayStart)
+    .lt('opened_at', yesterdayEnd);
+
+  const yesterdayStuckCount = (yesterdayStuck || []).length;
+
   // ═══ TODAY EXPENSES ═══
   const { data: todayExpenses } = await supabase
     .from('cash_movements')
@@ -317,7 +369,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
 
   const todayExpenseTotal = (todayExpenses || []).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-  // ═══ PERIOD EXPENSES (для всех периодов, не только today) ═══
   let periodExpenseTotal = todayExpenseTotal;
   if (period !== 'today') {
     const { data: periodExps } = await supabase
@@ -330,7 +381,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     periodExpenseTotal = (periodExps || []).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   }
 
-  // ═══ STOCK THREATS (with negative detection) ═══
+  // ═══ STOCK THREATS ═══
   const { data: lowStockItems } = await supabase
     .from('stock_items')
     .select('product_id, quantity, unit, warehouse_id, warehouses(name)')
@@ -338,7 +389,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     .order('quantity')
     .limit(15);
 
-  // Also check for negative stock
   const { data: negativeStockItems } = await supabase
     .from('stock_items')
     .select('product_id, quantity, unit, warehouse_id, warehouses(name)')
@@ -367,7 +417,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     return (w as any).name || null;
   }
 
-  /** Query with .in() on a large ID array — chunks to avoid Supabase/postgREST limits */
   async function chunkedInQuery<T extends Record<string, any>>(
     table: string,
     columns: string,
@@ -382,10 +431,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       let query = supabase.from(table).select(columns).in(idColumn, chunk);
       if (extraFilter) query = extraFilter(query);
       const { data, error } = await query;
-      if (error) {
-        console.error(`chunkedInQuery ${table} chunk ${i}:`, error.message);
-        continue;
-      }
+      if (error) { console.error(`chunkedInQuery ${table} chunk ${i}:`, error.message); continue; }
       if (data) results.push(...(data as T[]));
     }
     return results;
@@ -404,27 +450,25 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       affectedDishes: [],
       warehouseName: _whName(s),
       negative: isNegative,
-      lastDelivery: null, // filled below
+      lastDelivery: null,
     };
   });
 
-  // ═══ LAST DELIVERY per product ═══
   const threatProductIds = [...new Set(allLowItems.map(s => s.product_id as string))];
-  // Build name → product_id map for reliable matching
   const nameToId = new Map<string, string>();
   for (const s of allLowItems) {
     const info = productNames[s.product_id as string];
     if (info) nameToId.set(info.name, s.product_id as string);
   }
   if (threatProductIds.length > 0) {
-    const { data: lastDeliveries, error: _ldErr } = await supabase
+    const { data: lastDeliveries } = await supabase
       .from('warehouse_delivery_items')
       .select('product_id, quantity, unit, delivery:delivery_id(created_at, supplier)')
       .in('product_id', threatProductIds)
       .order('delivery_id', { ascending: false })
       .limit(500);
 
-    if (lastDeliveries && !_ldErr) {
+    if (lastDeliveries) {
       const latestByProduct = new Map<string, { date: string; qty: number; unit: string }>();
       for (const d of lastDeliveries as any[]) {
         const pid = d.product_id as string;
@@ -434,20 +478,14 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
           ? new Date(delivery.created_at as string).toLocaleString('ru-RU', { day: 'numeric', month: 'short' })
           : null;
         if (dateStr) {
-          latestByProduct.set(pid, {
-            date: dateStr,
-            qty: Number(d.quantity) || 0,
-            unit: (d.unit as string) || 'кг',
-          });
+          latestByProduct.set(pid, { date: dateStr, qty: Number(d.quantity) || 0, unit: (d.unit as string) || 'кг' });
         }
       }
       for (const t of warehouseThreats) {
         const prodId = nameToId.get(t.name);
         if (!prodId) continue;
         const ld = latestByProduct.get(prodId);
-        if (ld) {
-          t.lastDelivery = `${ld.date}, ${ld.qty} ${ld.unit}`;
-        }
+        if (ld) t.lastDelivery = `${ld.date}, ${ld.qty} ${ld.unit}`;
       }
     }
   }
@@ -456,39 +494,34 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
   const zeroCount = warehouseThreats.filter(t => t.level === 'critical' && !t.negative).length;
   const lowOnly = warehouseThreats.filter(t => !t.negative && Number.parseFloat(t.remaining) > 0);
 
-  // ═══ NEGATIVE STOCK ITEMS (raw data for inline correction) ═══
   const negativeStockForCorrection: NegativeStockItem[] = (negativeStockItems || []).map(s => {
     const info = productNames[s.product_id as string];
+    const whName = _whName(s) || '';
     return {
       productId: s.product_id as string,
-      productName: info?.name || (s.product_id as string).slice(0, 8),
+      name: info?.name || (s.product_id as string).slice(0, 8),
       quantity: Number(s.quantity) || 0,
       unit: info?.unit || (s.unit as string) || 'кг',
+      warehouse: whName,
+      productName: info?.name || (s.product_id as string).slice(0, 8),
       warehouseId: s.warehouse_id as string,
-      warehouseName: _whName(s),
+      warehouseName: whName,
     };
   });
 
-  // ═══ TOP DISHES (for food cost KPI — period-based) ═══
+  // ═══ TOP DISHES (for food cost) ═══
   let periodTopDishes: TopDish[] = [];
-
   const topDishSourceIds = period === 'today' && todayOrderIds.length > 0
     ? todayOrderIds
     : periodOrderIds.length > 0
       ? periodOrderIds
       : (weekOrders || []).map((o: any) => o.id);
 
-  // Map dish product_id → { name, total qty, total revenue }
   const dishMap = new Map<string, { name: string; qty: number; revenue: number }>();
-
   if (topDishSourceIds.length > 0) {
     const items = await chunkedInQuery<{ product_id: string; product_name: string; quantity: number; product_price: number }>(
-      'order_items',
-      'product_id, product_name, quantity, product_price',
-      topDishSourceIds,
-      'order_id',
+      'order_items', 'product_id, product_name, quantity, product_price', topDishSourceIds, 'order_id',
     );
-
     for (const item of items || []) {
       const pid = item.product_id as string;
       const qty = Number(item.quantity) || 1;
@@ -500,10 +533,8 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     }
   }
 
-  // Compute ingredient cost per dish from recipe_items × products.cost_price
   const dishIds = [...dishMap.keys()];
   const costByDishId = new Map<string, number>();
-
   if (dishIds.length > 0) {
     const { data: recipes } = await supabase
       .from('recipe_items')
@@ -524,20 +555,17 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
         unitByIngredient.set(ing.id as string, (ing.unit as string) || 'кг');
       }
 
-      /** Convert recipe quantity to match cost_price unit basis */
       const unitFactor = (recipeUnit: string, ingredientUnit: string): number => {
         const ru = (recipeUnit || 'г').toLowerCase();
         const iu = (ingredientUnit || '').toLowerCase();
-        // If ingredient is priced per kg but recipe uses grams
         if ((ru === 'г' || ru === 'мл') && (iu === 'кг' || iu === 'л')) return 1 / 1000;
-        // Same unit or unknown — no conversion
         return 1;
       };
 
       for (const r of recipes) {
         const dishId = r.product_id as string;
         const ingId = r.ingredient_id as string;
-        const ingCost = (costByIngredient.get(ingId) || 0) / 100; // kopecks → som
+        const ingCost = (costByIngredient.get(ingId) || 0) / 100;
         const ingUnit = unitByIngredient.get(ingId) || 'кг';
         const recipeUnit = (r.unit as string) || 'г';
         const perPortionQty = Number(r.quantity) || 0;
@@ -556,10 +584,12 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     })
     .sort((a, b) => b.margin - a.margin);
 
-  // Total food cost for the period (from period-based dishes)
   const totalFoodCost = periodTopDishes.reduce((sum, d) => sum + d.cost, 0);
+  const todayFoodCost = period === 'today'
+    ? totalFoodCost
+    : periodRevenue > 0 ? totalFoodCost * (todayRevenue / periodRevenue) : totalFoodCost;
 
-  // ═══ TOP DISHES — всегда за месяц (для показа) ═══
+  // ═══ TOP DISHES MONTH (for table) ═══
   const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1).toISOString();
   const monthEnd = new Date(todayStart.getTime() + 86400000).toISOString();
 
@@ -576,12 +606,8 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
 
   if (monthOrderIds.length > 0) {
     const monthItems = await chunkedInQuery<{ product_id: string; product_name: string; quantity: number; product_price: number }>(
-      'order_items',
-      'product_id, product_name, quantity, product_price',
-      monthOrderIds,
-      'order_id',
+      'order_items', 'product_id, product_name, quantity, product_price', monthOrderIds, 'order_id',
     );
-
     for (const item of monthItems || []) {
       const pid = item.product_id as string;
       const qty = Number(item.quantity) || 1;
@@ -593,7 +619,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     }
   }
 
-  // Compute ingredient cost for month dishes
   const monthDishIds = [...monthDishMap.keys()];
   const monthCostByDishId = new Map<string, number>();
 
@@ -651,12 +676,11 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     .sort((a, b) => a.margin - b.margin)
     .slice(0, 3);
 
-  // ═══ CHRONOLOGY — всегда сегодня (не зависит от периода) ═══
+  // ═══ CHRONOLOGY ═══
   const chronology: ChronologyEvent[] = [];
   const chronoStart = todayStart.toISOString();
   const chronoEnd = new Date(todayStart.getTime() + 86400000).toISOString();
 
-  // Cash transactions (expenses + deposits)
   const { data: recentTx } = await supabase
     .from('cash_movements')
     .select('id, movement_type, amount, note, occurred_at')
@@ -682,7 +706,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     });
   }
 
-  // Deliveries
   const { data: recentDeliveries } = await supabase
     .from('warehouse_deliveries')
     .select('id, supplier, amount, created_at')
@@ -705,7 +728,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     });
   }
 
-  // Write-offs
   const { data: recentWriteOffs } = await supabase
     .from('warehouse_write_offs')
     .select('id, reason_summary, created_at, warehouse_write_off_items(name, quantity, unit)')
@@ -731,11 +753,8 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     });
   }
 
-  const sortedChronology = chronology
-    .sort((a, b) => b.time.localeCompare(a.time))
-    .slice(0, 12);
+  const sortedChronology = chronology.sort((a, b) => b.time.localeCompare(a.time)).slice(0, 12);
 
-  // Prepend shift status as first chronology event
   if (activeShift) {
     const hoursText = shiftOpenHours >= 1
       ? `${Math.round(shiftOpenHours)} ч`
@@ -750,21 +769,15 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     });
   }
 
-  // ═══ ALERTS ═══
-  // Grouped by DOMAIN (Склад / Касса / Чеки), not by severity.
-  // Info-level alerts (dead dishes, dead ingredients) — removed from daily dashboard.
-  // Stock alerts (negative/zero/low) merged into ONE grouped alert.
+  // ═══ ALERTS (with urgency) ═══
   const alerts: Alert[] = [];
 
-  // Helper: only add alert if it's after baseline date
   const afterBaseline = (dateStr: string) => {
-    if (!baseline) return true; // no baseline — show everything
+    if (!baseline) return true;
     return dateStr >= baseline;
   };
 
-  // ═══ WAREHOUSE DOMAIN ═══
-
-  // Stock — one alert summarizing all issues (negative + zero + low)
+  // --- WAREHOUSE ---
   const totalStockProblems = negativeCount + zeroCount + lowOnly.length;
   if (totalStockProblems > 0) {
     const parts: string[] = [];
@@ -777,47 +790,78 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       type: worstType,
       message: `Остатки: ${parts.join(', ')}`,
       actionLabel: 'Исправить →',
-      actionHref: '/warehouse',
+      actionHref: '/menu/ingredients',
       domain: 'warehouse',
+      urgency: classifyUrgency('stock', worstType),
     });
   }
 
-  // No inventory
-  const { data: lastInventory } = await supabase
-    .from('warehouse_inventory_sessions')
-    .select('conducted_at')
-    .eq('venue_id', VENUE_ID)
-    .order('conducted_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Inventory alerts removed — migration card covers the onboarding phase;
+  // stale inventory is a process reminder, not an operational alert.
 
-  const daysSinceInventory = lastInventory?.conducted_at
-    ? Math.floor((Date.now() - new Date(lastInventory.conducted_at as string).getTime()) / 86400000)
-    : null;
-
-  if (daysSinceInventory === null) {
+  // --- YESTERDAY SHIFT ---
+  if (yesterdayShiftData && !yesterdayShiftData.closed) {
     alerts.push({
-      id: 'no-inventory',
-      type: 'warning',
-      message: 'Инвентаризация ни разу не проводилась',
-      actionLabel: 'Начать →',
-      actionHref: '/warehouse/inventory',
-      domain: 'warehouse',
-    });
-  } else if (daysSinceInventory > 30) {
-    alerts.push({
-      id: 'stale-inventory',
-      type: 'warning',
-      message: `Последняя инвентаризация ${daysSinceInventory} дн. назад`,
-      actionLabel: 'Начать →',
-      actionHref: '/warehouse/inventory',
-      domain: 'warehouse',
+      id: 'yesterday-shift-open', type: 'critical',
+      message: 'Вчерашняя смена не закрыта',
+      actionLabel: 'Закрыть смену →', actionHref: '/cash-shifts',
+      domain: 'cash', urgency: 'urgent',
     });
   }
 
-  // ═══ CHECKS DOMAIN ═══
+  // --- NO ACTIVE SHIFT ---
+  if (!activeShift) {
+    alerts.push({
+      id: 'no-active-shift', type: 'critical',
+      message: 'Нет активной смены — касса не открыта',
+      actionLabel: 'Открыть смену →', actionHref: '/cash-shifts',
+      domain: 'cash', urgency: 'urgent',
+    });
+  }
 
-  // Stuck orders (>60 min)
+  // --- TODAY EMPTY ---
+  if ((todayOrders || []).length === 0 && !activeShift) {
+    // already covered by no-active-shift, skip
+  } else if ((todayOrders || []).length === 0) {
+    alerts.push({
+      id: 'today-empty', type: 'warning',
+      message: 'Сегодня нет заказов. Проверьте, открыта ли касса.',
+      actionLabel: null, actionHref: null,
+      domain: 'checks', urgency: 'important',
+    });
+  }
+
+  // --- REVENUE CRASH (vs same day last week) ---
+  if (lastWeekSameDayRevenue > 5000 && todayRevenue < lastWeekSameDayRevenue * 0.5) {
+    alerts.push({
+      id: 'revenue-crash', type: 'warning',
+      message: `Выручка упала на ${Math.round((1 - todayRevenue / lastWeekSameDayRevenue) * 100)}% к прошлой неделе`,
+      actionLabel: 'Проверить чеки →', actionHref: '/checks',
+      domain: 'checks', urgency: 'important',
+    });
+  }
+
+  // --- EXPENSES > REVENUE ---
+  if (todayRevenue > 0 && todayExpenseTotal > todayRevenue) {
+    alerts.push({
+      id: 'expense-over-revenue', type: 'critical',
+      message: `Расходы (${fmtSom(Math.round(todayExpenseTotal))} с) превышают выручку (${fmtSom(Math.round(todayRevenue))} с)`,
+      actionLabel: 'Проверить расходы →', actionHref: '/transactions',
+      domain: 'cash', urgency: 'urgent',
+    });
+  }
+
+  // --- YESTERDAY STUCK ORDERS ---
+  if (yesterdayStuckCount > 0) {
+    alerts.push({
+      id: 'yesterday-stuck', type: 'critical',
+      message: `${yesterdayStuckCount} незакрытых заказ${yesterdayStuckCount === 1 ? '' : yesterdayStuckCount < 5 ? 'а' : 'ов'} со вчера`,
+      actionLabel: 'Проверить →', actionHref: '/checks',
+      domain: 'checks', urgency: 'urgent',
+    });
+  }
+
+  // --- CHECKS ---
   const sixtyMinAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { count: stuckCount } = await supabase
     .from('orders')
@@ -828,59 +872,21 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
 
   if (stuckCount && stuckCount > 0 && stuckCount <= 20) {
     alerts.push({
-      id: 'stuck-orders',
-      type: stuckCount > 5 ? 'critical' : 'warning',
+      id: 'stuck-orders', type: stuckCount > 5 ? 'critical' : 'warning',
       message: `${stuckCount} заказ${stuckCount === 1 ? '' : stuckCount < 5 ? 'а' : 'ов'} висит больше 1 ч`,
-      actionLabel: 'Проверить →',
-      actionHref: '/checks',
-      domain: 'checks',
+      actionLabel: 'Проверить →', actionHref: '/checks',
+      domain: 'checks', urgency: 'important',
     });
   }
 
-  // ═══ CASH DOMAIN ═══
+  // shift-long removed: штатное состояние долгой смены, не проблема.
+  // blank-expense removed: гигиена данных, не операционный алерт.
 
-  // Long shift (>14h)
-  if (shiftOpenHours > 14) {
-    alerts.push({
-      id: 'shift-long',
-      type: 'info',
-      message: `Смена открыта ${Math.round(shiftOpenHours)} ч. Попросите кассира закрыть.`,
-      actionLabel: null,
-      actionHref: null,
-      domain: 'cash',
-    });
-  }
-
-  // Expenses without description
-  const { data: blankExpenses } = await supabase
-    .from('cash_movements')
-    .select('id')
-    .eq('venue_id', VENUE_ID)
-    .eq('movement_type', 'float_out')
-    .or('note.is.null,note.eq.')
-    .gte('occurred_at', chronoStart)
-    .lt('occurred_at', chronoEnd);
-
-  const blankExpenseCount = (blankExpenses || []).length;
-  if (blankExpenseCount > 0) {
-    alerts.push({
-      id: 'blank-expense',
-      type: 'warning',
-      message: `${blankExpenseCount} расходов без описания`,
-      actionLabel: 'Добавить описание →',
-      actionHref: '/transactions',
-      domain: 'cash',
-    });
-  }
-
-  // ═══ SUSPICIOUS CHECKS (paid << sum of item_added, via order_events) ═══
+  // --- SUSPICIOUS CHECKS ---
   if (paidToday.length > 0) {
     const paidOrderIds = paidToday.map(o => o.id);
     const addedEvents = await chunkedInQuery<{ order_id: string; quantity: number; unit_price: number }>(
-      'order_events',
-      'order_id, quantity, unit_price',
-      paidOrderIds,
-      'order_id',
+      'order_events', 'order_id, quantity, unit_price', paidOrderIds, 'order_id',
       (q) => q.eq('action', 'item_added'),
     );
 
@@ -890,39 +896,33 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
         const amt = (Number(e.quantity) || 1) * (Number(e.unit_price) || 0);
         addedByOrder.set(e.order_id, (addedByOrder.get(e.order_id) || 0) + amt);
       }
-
       for (const o of paidToday) {
         const addedTotal = addedByOrder.get(o.id);
         const paidTotal = Number(o.total_amount) || 0;
         if (addedTotal && addedTotal > 200 && paidTotal < addedTotal * 0.2) {
           alerts.push({
-            id: `suspicious-check-${o.id}`,
-            type: 'warning',
+            id: `suspicious-check-${o.id}`, type: 'warning',
             message: `Чек ...${o.id.slice(-6)}: оплачено ${fmtSom(paidTotal)} из ${fmtSom(Math.round(addedTotal))}`,
-            actionLabel: 'Проверить чек →',
-            actionHref: `/checks`,
-            domain: 'checks',
+            actionLabel: 'Проверить чек →', actionHref: '/checks',
+            domain: 'checks', urgency: 'important',
           });
         }
       }
     }
   }
 
-  // Many refunds today
+  // Refunds
   const refundCount = paidToday.filter(o => Number(o.total_amount) < 0).length;
   if (refundCount >= 3) {
     alerts.push({
-      id: 'many-refunds',
-      type: 'warning',
+      id: 'many-refunds', type: 'warning',
       message: `${refundCount} возвратов за смену`,
-      actionLabel: 'Проверить →',
-      actionHref: '/checks',
-      domain: 'checks',
+      actionLabel: 'Проверить →', actionHref: '/checks',
+      domain: 'checks', urgency: 'important',
     });
   }
 
-  // ═══ SHIFT DISCREPANCY (>5% of revenue AND >200 som) ═══
-  // Get closed shifts with cash_difference_at_close, sorted by most recent
+  // --- SHIFT DISCREPANCY ---
   const { data: closedShifts } = await supabase
     .from('shifts')
     .select('id, opened_at, closed_at, cash_difference_at_close')
@@ -936,11 +936,9 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     (s: any) => Math.abs(Number(s.cash_difference_at_close) || 0) > 200
   ).length;
 
-  // Check each closed shift for proportional discrepancy
   for (const shift of (closedShifts || [])) {
     const diff = Math.abs(Number(shift.cash_difference_at_close) || 0);
     if (diff <= 200) continue;
-    // Calculate shift revenue from paid orders during shift period
     const { data: shiftOrders } = await supabase
       .from('orders')
       .select('total_amount')
@@ -952,74 +950,31 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     if (shiftRevenue > 0 && diff > shiftRevenue * 0.05) {
       if (afterBaseline(shift.closed_at as string)) {
         alerts.push({
-          id: `shift-discrepancy-${shift.id}`,
-          type: 'critical',
+          id: `shift-discrepancy-${shift.id}`, type: 'critical',
           message: `Расхождение ${fmtSom(diff)} сом (${Math.round(diff / shiftRevenue * 100)}% от выручки)`,
-          actionLabel: 'Проверить смену →',
-          actionHref: `/cash-shifts?shift=${shift.id}`,
-          domain: 'cash',
+          actionLabel: 'Проверить смену →', actionHref: `/cash-shifts?shift=${shift.id}`,
+          domain: 'cash', urgency: 'urgent',
         });
-        break; // Only show the most recent one
+        break;
       }
     }
   }
 
-  // ═══ STAFF RETURN RATE (anomalous vs restaurant avg) ═══
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 86400000).toISOString();
-  const { data: allPaidOrders } = await supabase
-    .from('orders')
-    .select('id, total_amount, waiter_id')
-    .eq('venue_id', VENUE_ID)
-    .eq('status', 'paid')
-    .gte('opened_at', fourteenDaysAgo)
-    .limit(500);
+  // staff-refunds removed: аналитика за 14 дней, не today-проблема.
+  // Видно в отчётах, не нужно каждый день на дашборде.
 
-  if (allPaidOrders && allPaidOrders.length > 20) {
-    const staffStats = new Map<string, { name: string; total: number; refunds: number }>();
-    for (const o of allPaidOrders as any[]) {
-      const sid = o.waiter_id;
-      if (!sid) continue;
-      const existing = staffStats.get(sid) || { name: sid.slice(0, 8), total: 0, refunds: 0 };
-      existing.total++;
-      if (Number(o.total_amount) < 0) existing.refunds++;
-      staffStats.set(sid, existing);
-    }
-
-    // Calculate restaurant average refund rate
-    let totalAll = 0, refundsAll = 0;
-    for (const s of staffStats.values()) { totalAll += s.total; refundsAll += s.refunds; }
-    const avgRate = totalAll > 0 ? refundsAll / totalAll : 0;
-
-    for (const [sid, stats] of staffStats) {
-      if (stats.total < 5) continue;
-      const rate = stats.refunds / stats.total;
-      if (stats.refunds >= 3 && rate > avgRate * 2 && avgRate > 0) {
-        alerts.push({
-          id: `staff-refunds-${sid}`,
-          type: 'warning',
-          message: `${stats.name}: ${Math.round(rate * 100)}% возвратов (среднее ${Math.round(avgRate * 100)}%)`,
-          actionLabel: 'Проверить официанта →',
-          actionHref: `/checks`,
-          domain: 'staff',
-        });
-      }
-    }
-  }
-
-  // ═══ ANOMALOUS DELIVERIES (qty > 3x avg, min 3 past deliveries) ═══
+  // --- ANOMALOUS DELIVERIES ---
   const { data: deliveryItems } = await supabase
     .from('warehouse_delivery_items')
     .select('product_id, quantity, delivery_id, delivery:delivery_id(created_at)')
     .limit(500);
 
   if (deliveryItems && deliveryItems.length > 0) {
-    // Sort by delivery created_at descending (newest first)
     const sorted = [...(deliveryItems as any[])].sort((a, b) => {
       const aDate = a.delivery?.created_at || '';
       const bDate = b.delivery?.created_at || '';
       return bDate.localeCompare(aDate);
     });
-
     const byProduct = new Map<string, number[]>();
     for (const item of sorted) {
       if (!item.product_id) continue;
@@ -1029,7 +984,6 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       arr.push(qty);
       byProduct.set(item.product_id, arr);
     }
-
     for (const [productId, quantities] of byProduct) {
       if (quantities.length < 4) continue;
       const latest = quantities[0];
@@ -1037,119 +991,122 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       const avg = past.reduce((s, q) => s + q, 0) / past.length;
       if (avg > 0 && latest > avg * 3) {
         const { data: prodInfo } = await supabase
-          .from('products')
-          .select('name, unit')
-          .eq('id', productId)
-          .single();
+          .from('products').select('name, unit').eq('id', productId).single();
         const name = prodInfo?.name || productId.slice(0, 8);
         const unit = prodInfo?.unit || 'кг';
         alerts.push({
-          id: `anomaly-delivery-${productId}`,
-          type: 'warning',
+          id: `anomaly-delivery-${productId}`, type: 'warning',
           message: `${name}: ${latest} ${unit} (обычно ${Math.round(avg)} ${unit})`,
-          actionLabel: 'Проверить →',
-          actionHref: '/warehouse/operations?type=delivery',
-          domain: 'warehouse',
+          actionLabel: 'Проверить →', actionHref: '/warehouse/operations?type=delivery',
+          domain: 'warehouse', urgency: 'important',
         });
       }
     }
   }
 
   // ═══ MIGRATION CARDS ═══
-  const migrationCards = buildMigrationCards(
-    negativeCount,
-    zeroCount,
-    0, // anomalousChecks — removed detector
-    0, // zeroAmountChecks — removed detector (100% discount = breakfast)
-    shiftsWithDiscrepancy,
-  );
+  const migrationCards = buildMigrationCards(negativeCount, zeroCount, 0, 0, shiftsWithDiscrepancy);
 
   // ═══ ALERT GROUPING ═══
   const alertGroups = groupAlerts(alerts);
   const criticalCount = alerts.filter(a => a.type === 'critical').length;
   const totalAlertCount = alerts.length;
 
+  const alertUrgencyGroups: AlertUrgencyGroups = {
+    urgent: alerts.filter(a => a.urgency === 'urgent'),
+    important: alerts.filter(a => a.urgency === 'important'),
+    background: alerts.filter(a => a.urgency === 'background'),
+  };
+
   // ═══ METRICS ═══
+  // Today row — with trend vs same day last week
+  const todayAvgCheck = todayChecks > 0 ? Math.round(todayRevenue / todayChecks) : 0;
+  const todayRevenueTrend = lastWeekSameDayRevenue > 0 ? Math.round(((todayRevenue - lastWeekSameDayRevenue) / lastWeekSameDayRevenue) * 100) : todayRevenue > 0 ? 100 : 0;
+  const todayCheckTrend = lastWeekSameDayChecks > 0 ? todayChecks - lastWeekSameDayChecks : todayChecks;
+  const todayAvgCheckTrend = lastWeekSameDayAvgCheck > 0 ? Math.round(((todayAvgCheck - lastWeekSameDayAvgCheck) / lastWeekSameDayAvgCheck) * 100) : todayAvgCheck > 0 ? 100 : 0;
+  const foodCostPercentToday = todayRevenue > 0 ? Math.round((todayFoodCost / todayRevenue) * 100) : 0;
+
+  // Period row
   const displayRevenue = period === 'today' ? todayRevenue : periodRevenue;
   const displayChecks = period === 'today' ? todayChecks : periodChecks;
   const avgCheckRounded = displayChecks > 0 ? Math.round(displayRevenue / displayChecks) : 0;
-  const prevAvgCheck = prevChecks > 0 ? Math.round(prevRevenue / prevChecks) : 0;
-
-  const revenueTrend = prevRevenue > 0 ? Math.round(((displayRevenue - prevRevenue) / prevRevenue) * 100) : displayRevenue > 0 ? 100 : 0;
-  const avgCheckTrend = prevAvgCheck > 0 ? Math.round(((avgCheckRounded - prevAvgCheck) / prevAvgCheck) * 100) : avgCheckRounded > 0 ? 100 : 0;
-
-  const prevLabel = period === 'today' ? 'вчера' : period === 'week' ? 'прошл. нед.' : 'прошл. мес.';
+  const foodCostPercent = displayRevenue > 0 ? Math.round((totalFoodCost / displayRevenue) * 100) : 0;
   const isTodayEmpty = period === 'today' && todayChecks === 0;
 
-  const foodCostPercent = displayRevenue > 0 ? Math.round((totalFoodCost / displayRevenue) * 100) : 0;
+  const prevLabel = period === 'today' ? 'прошл. нед.' : period === 'week' ? 'прошл. нед.' : 'прошл. мес.';
 
   const metrics: Metric[] = [
     {
       label: 'Выручка',
-      value: displayRevenue,
+      todayValue: todayRevenue,
+      periodValue: periodRevenue,
       format: 'som',
-      trend: isTodayEmpty ? null : { value: revenueTrend, prevPeriod: prevRevenue },
-      tooltip: isTodayEmpty && yesterdayRevenue > 0
-        ? `Заказов сегодня нет. Вчера: ${fmtSom(yesterdayRevenue)} сом`
-        : `vs ${prevLabel}: ${fmtSom(prevRevenue)} сом`,
+      todayTrend: isTodayEmpty ? null : { value: todayRevenueTrend, prevPeriod: lastWeekSameDayRevenue },
+      tooltip: `vs ${prevLabel}: ${fmtSom(lastWeekSameDayRevenue)} сом`,
     },
     {
-      label: 'Себестоимость',
-      value: Math.round(totalFoodCost),
-      format: 'som',
-      trend: null,
-      tooltip: totalFoodCost > 0
-        ? `Фудкост ${foodCostPercent}% от выручки`
-        : 'Нет данных о себестоимости',
+      label: 'Чеков',
+      todayValue: todayChecks,
+      periodValue: periodChecks,
+      format: 'count',
+      todayTrend: isTodayEmpty ? null : { value: todayCheckTrend, prevPeriod: lastWeekSameDayChecks },
     },
     {
-      label: 'Средний чек',
-      value: avgCheckRounded,
+      label: 'Ср. чек',
+      todayValue: todayAvgCheck,
+      periodValue: avgCheckRounded,
       format: 'som',
-      trend: isTodayEmpty ? null : { value: avgCheckTrend, prevPeriod: prevAvgCheck },
+      todayTrend: isTodayEmpty ? null : { value: todayAvgCheckTrend, prevPeriod: lastWeekSameDayAvgCheck },
     },
     {
       label: 'Расходы',
-      value: periodExpenseTotal,
+      todayValue: todayExpenseTotal,
+      periodValue: periodExpenseTotal,
       format: 'som',
-      trend: null,
+      todayTrend: null,
       tooltip: 'Расходы из кассы за период',
     },
     {
-      label: 'Открыто',
-      value: openNow,
-      format: 'count',
-      trend: null,
-      tooltip: 'Активных заказов прямо сейчас',
-    },
-    {
-      label: 'В кассе',
-      value: cashInDrawer,
-      format: 'som',
-      trend: null,
-      tooltip: 'Старт + нал. оплаты − нал. расходы',
+      label: 'Фудкост',
+      todayValue: foodCostPercentToday,
+      periodValue: foodCostPercent,
+      format: 'percent',
+      todayTrend: null,
+      tooltip: totalFoodCost > 0 ? `Себестоимость ${fmtSom(Math.round(totalFoodCost))} сом` : 'Нет данных',
     },
   ];
 
-  // ═══ DAILY REVENUE SPARKLINE (last 7 days) ═══
+  // ═══ DAILY SPARKLINES ═══
   const dailyRevenues: number[] = [];
+  const dailyChecks: number[] = [];
+  const dailyAvgChecks: number[] = [];
+  const dailyExpenses: number[] = [];
   for (let d = 6; d >= 0; d--) {
     const dayStart = new Date(todayStart.getTime() - d * 86400000);
     const dayEnd = new Date(dayStart.getTime() + 86400000);
-    // Count from already fetched weekOrders if available
-    const daySum = (weekOrders || []).filter((o: any) => {
+    const dayOrders = (weekOrders || []).filter((o: any) => {
       const t = new Date(o.opened_at || o.created_at || 0).getTime();
       return t >= dayStart.getTime() && t < dayEnd.getTime();
-    }).reduce((s: number, o: any) => s + (Number(o.total_amount) || 0), 0);
+    });
+    const daySum = dayOrders.reduce((s: number, o: any) => s + (Number(o.total_amount) || 0), 0);
+    const dayCount = dayOrders.length;
     dailyRevenues.push(daySum);
+    dailyChecks.push(dayCount);
+    dailyAvgChecks.push(dayCount > 0 ? Math.round(daySum / dayCount) : 0);
+
+    const dayExpSum = (weekExpenses || []).filter((e: any) => {
+      const t = new Date(e.occurred_at || 0).getTime();
+      return t >= dayStart.getTime() && t < dayEnd.getTime();
+    }).reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+    dailyExpenses.push(dayExpSum);
   }
 
   // ═══ YESTERDAY SUMMARY ═══
   const yesterday: YesterdaySummary = {
     revenue: yesterdayRevenue || null,
     checks: yesterdayChecks || null,
-    shiftClosed: null,
-    cashDifference: null,
+    shiftClosed: yesterdayShiftData?.closed ? 'closed' : (yesterdayShiftData ? 'open' : null),
+    cashDifference: yesterdayShiftData?.cashDifference ?? null,
     status: yesterdayRevenue > 0 ? 'normal' : 'unavailable',
   };
 
@@ -1157,6 +1114,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     metrics,
     alerts,
     alertGroups,
+    alertUrgencyGroups,
     totalAlertCount,
     criticalCount,
     chronology: sortedChronology,
@@ -1169,6 +1127,7 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
       hoursOpen: shiftOpenHours || null,
       cashier: null,
     },
+    yesterdayShift: yesterdayShiftData,
     yesterday,
     topDishes: topDishesMonth,
     isTodayEmpty,
@@ -1180,13 +1139,16 @@ async function fetchDashboardNewData(period: DashboardPeriod = 'today'): Promise
     negativeStockItems: negativeStockForCorrection,
     foodCost: totalFoodCost,
     dailyRevenues,
+    dailyChecks,
+    dailyAvgChecks,
+    dailyExpenses,
   };
 }
 
-export function useDashboardNewData(period: DashboardPeriod = 'today') {
+export function useDashboardNewData(period: DashboardPeriod = 'today', offset: number = 0) {
   return useQuery({
-    queryKey: ['dashboard_new', VENUE_ID, period],
-    queryFn: () => fetchDashboardNewData(period),
+    queryKey: ['dashboard_new', VENUE_ID, period, offset],
+    queryFn: () => fetchDashboardNewData(period, offset),
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
   });

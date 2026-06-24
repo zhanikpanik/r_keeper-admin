@@ -13,7 +13,7 @@ export function OperationalResultCard({ data }: Props) {
   return (
     <div className="bg-card rounded-xl p-4 hover:shadow-md transition-shadow">
       <h2 className="text-base font-semibold text-foreground mb-1">Операционный итог</h2>
-      <p className="text-xs text-muted-foreground mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         выручка − кассовые расходы − списания, без учёта аренды и налогов
       </p>
 

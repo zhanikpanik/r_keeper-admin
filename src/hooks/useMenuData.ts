@@ -318,40 +318,34 @@ interface WarehouseProductJoinRow {
 async function fetchWarehouseIngredientsList(warehouseId: string | null): Promise<IngredientListItem[]> {
   if (!warehouseId) return [];
 
-  const { data, error } = await supabase
-    .from('warehouse_products')
-    .select('product_id, products!inner(id, name, price, stock_quantity, unit, is_active, workshop_id, workshops(name))')
-    .eq('warehouse_id', warehouseId);
-  if (error) throw error;
-
-  const rows: IngredientProductRow[] = [];
-  for (const raw of (data ?? []) as WarehouseProductJoinRow[]) {
-    const p = Array.isArray(raw.products) ? raw.products[0] : raw.products;
-    if (!p) continue;
-    rows.push(p);
-  }
-  if (rows.length === 0) return [];
-
-  const ids = rows.map((r) => r.id);
+  // Query stock_items directly — warehouse_products may be empty (migration artifact)
   const { data: stockRows, error: stockErr } = await supabase
     .from('stock_items')
     .select('product_id, quantity')
-    .eq('warehouse_id', warehouseId)
-    .in('product_id', ids);
+    .eq('warehouse_id', warehouseId);
   if (stockErr) throw stockErr;
 
+  if (!stockRows || stockRows.length === 0) return [];
+
+  const productIds = [...new Set(stockRows.map(s => (s as { product_id: string }).product_id))];
+
+  const { data: products, error: prodErr } = await supabase
+    .from('products')
+    .select('id, name, price, stock_quantity, unit, is_active, workshop_id, workshops(name)')
+    .in('id', productIds);
+  if (prodErr) throw prodErr;
+
   const stockMap = new Map<string, number>();
-  for (const s of stockRows ?? []) {
-    const pid = (s as { product_id: string }).product_id;
-    stockMap.set(pid, Number((s as { quantity: unknown }).quantity) || 0);
+  for (const s of stockRows as { product_id: string; quantity: unknown }[]) {
+    stockMap.set(s.product_id, Number(s.quantity) || 0);
   }
 
-  const result = rows
+  const result = (products as IngredientProductRow[] || [])
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
     .map((i) => ({
       ...i,
       stock_quantity: stockMap.get(i.id) ?? 0,
-      workshop_name: i.workshops?.name || '',
+      workshop_name: (i.workshops as { name?: string } | null)?.name || '',
       warehouse_breakdown: [
         {
           warehouse_id: warehouseId,

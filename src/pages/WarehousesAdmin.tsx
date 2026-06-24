@@ -162,11 +162,11 @@ export function WarehousesAdmin() {
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/menu/ingredients/${item.id}?warehouse=${selectedWarehouse.id}&back=warehouse`); } }}
                 >
-                  <td className="py-2 px-3 text-sm font-medium truncate">{item.name}</td>
-                  <td className="py-2 px-3 text-sm whitespace-nowrap text-muted-foreground">{item.unit}</td>
+                  <td className="py-2 px-3 text-sm truncate">{item.name}</td>
+                  <td className="py-2 px-3 text-sm whitespace-nowrap">{item.unit}</td>
                   <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap">{item.stock_quantity}</td>
-                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap text-muted-foreground">{somRounded(item.price)} сом</td>
-                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap font-medium">{somRounded(item.price * item.stock_quantity)} сом</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap">{somRounded(item.price)} сом</td>
+                  <td className="py-2 px-3 text-sm text-right tabular-nums whitespace-nowrap">{somRounded(item.price * item.stock_quantity)} сом</td>
                 </tr>
               ))}
             </tbody>

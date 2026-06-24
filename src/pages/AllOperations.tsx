@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RotateCcw, Search, X, PackageCheck, Check } from 'lucide-react';
+import { type ColumnDef } from '@tanstack/react-table';
+import { DataTable } from '@/components/ui/DataTable';
 import { EditButton } from '@/components/ui/EditButton';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -8,7 +10,6 @@ import {
   useReceiveDelivery,
   useCancelDelivery,
   useRestoreDelivery,
-  useSendDeliveryInTransit,
   useWarehouseWriteOffs,
   usePostWriteOff,
   useCancelWriteOff,
@@ -28,6 +29,7 @@ import { supabase, VENUE_ID } from '@/lib/supabase';
 import { somRounded } from '@/lib/formatSom';
 import { SegmentTabs } from '@/components/ui/SegmentTabs';
 import { Badge } from '@/components/ui/Badge';
+import { AddButton } from '@/components/ui/ActionButtons';
 
 // ─── Helpers ───
 
@@ -39,12 +41,6 @@ function getPositionPlural(count: number) {
   if (n1 > 1 && n1 < 5) return 'позиции';
   return 'позиций';
 }
-
-const ROW_ACTION =
-  'opacity-40 group-hover:opacity-100 transition-opacity';
-
-const ACTION_PRIMARY =
-  'inline-flex cursor-pointer items-center justify-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-primary text-primary-foreground hover:bg-primary/80';
 
 // ─── Period filter ───
 
@@ -93,7 +89,6 @@ interface UnifiedOp {
   statusClass: string;
   amount: number | null;
   items: { name: string; quantity: number; unit: string; price?: number; reason?: string; total?: number }[];
-  // For actions — these are specific to each type
   editUrl: string;
 }
 
@@ -114,9 +109,9 @@ function statusBadge(status: string) {
 
 // ─── Merging ───
 
-/** Poster stores cost_price in kopecks — divide by 100 for som. Falls back to price. */
 function resolveProductCost(costMap: Map<string, number>, productId: string | null): number {
   if (!productId) return 0;
+  if (!(costMap instanceof Map)) return 0;
   return costMap.get(productId) ?? 0;
 }
 
@@ -200,17 +195,6 @@ function mergeOps(
   return ops;
 }
 
-// ─── Column widths — single source of truth ───
-
-const COL = {
-  date: 'w-[62px]',
-  warehouse: 'w-[72px]',
-  type: 'w-[110px]',
-  status: 'w-[90px]',
-  amount: 'w-[90px]',
-  action: 'w-[36px]',
-} as const;
-
 // ─── Component ───
 
 export function AllOperations() {
@@ -227,7 +211,7 @@ export function AllOperations() {
     () => searchParams.get('warehouse') || 'all'
   );
   const [search, setSearch] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const { data: warehouses = [] } = useWarehouses();
   const { data: deliveries = [] } = useWarehouseDeliveries();
@@ -235,8 +219,6 @@ export function AllOperations() {
   const { data: transfers = [] } = useWarehouseTransfers();
   const { data: inventories = [] } = useWarehouseInventorySessions();
 
-  // Product cost map for write-off amount calculation
-  // Poster stores cost_price in kopecks — divide by 100 for som, fall back to price
   const { data: costMap = new Map<string, number>() } = useQuery({
     queryKey: ['product_costs', VENUE_ID],
     queryFn: async () => {
@@ -260,7 +242,6 @@ export function AllOperations() {
   const receiveDelivery = useReceiveDelivery();
   const cancelDelivery = useCancelDelivery();
   const restoreDelivery = useRestoreDelivery();
-  const sendTransit = useSendDeliveryInTransit();
   const postWo = usePostWriteOff();
   const cancelWo = useCancelWriteOff();
   const restoreWo = useRestoreWriteOff();
@@ -273,7 +254,6 @@ export function AllOperations() {
     [deliveries, writeOffs, transfers, inventories, costMap]
   );
 
-  // Filter
   const q = search.toLowerCase().trim();
   const filtered = useMemo(() => {
     return allOps.filter((op) => {
@@ -291,7 +271,6 @@ export function AllOperations() {
     });
   }, [allOps, period, typeFilter, whFilter, q]);
 
-  // Sync URL
   function updateParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams);
     if (value === 'all' || value === 'month') {
@@ -304,63 +283,201 @@ export function AllOperations() {
 
   const isCancelledStatus = (op: UnifiedOp) => op.status === 'Отменено';
 
-  // Summary
   const summary = useMemo(() => {
     const active = filtered.filter(op => !isCancelledStatus(op));
-    const deliveries = active.filter(op => op.type === 'delivery');
-    const writeOffs = active.filter(op => op.type === 'write-off');
-    const inventories = active.filter(op => op.type === 'inventory');
+    const dels = active.filter(op => op.type === 'delivery');
+    const wos = active.filter(op => op.type === 'write-off');
+    const invs = active.filter(op => op.type === 'inventory');
 
-    const delTotal = deliveries.reduce((s, op) => s + (op.amount ?? 0), 0);
-    const woTotal = writeOffs.reduce((s, op) => s + (op.amount ?? 0), 0);
-    const invTotal = inventories.reduce((s, op) => s + (op.amount ?? 0), 0);
+    const delTotal = dels.reduce((s, op) => s + (op.amount ?? 0), 0);
+    const woTotal = wos.reduce((s, op) => s + (op.amount ?? 0), 0);
+    const invTotal = invs.reduce((s, op) => s + (op.amount ?? 0), 0);
 
-    return { deliveries: deliveries.length, delTotal, writeOffs: writeOffs.length, woTotal, inventories: inventories.length, invTotal };
+    return { deliveries: dels.length, delTotal, writeOffs: wos.length, woTotal, inventories: invs.length, invTotal };
   }, [filtered]);
 
+  const columns = useMemo<ColumnDef<UnifiedOp, any>[]>(() => [
+    {
+      id: 'date',
+      header: 'Дата',
+      cell: ({ row }) => {
+        const op = row.original;
+        const isCancelled = isCancelledStatus(op);
+        return (
+          <span className={`text-muted-foreground ${isCancelled ? 'line-through' : ''}`}>
+            {new Date(op.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'warehouse',
+      header: 'Склад',
+      meta: { align: 'text-left', className: 'text-left' },
+      cell: ({ row }) => {
+        const op = row.original;
+        const isCancelled = isCancelledStatus(op);
+        return (
+          <span className={`text-muted-foreground truncate block max-w-[80px] ${isCancelled ? 'line-through' : ''}`}>
+            {op.warehouseName}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'type',
+      header: 'Тип',
+      meta: { align: 'text-left', className: 'text-left' },
+      cell: ({ row }) => {
+        const op = row.original;
+        return <Badge className={op.typeClass}>{op.typeLabel}</Badge>;
+      },
+    },
+    {
+      id: 'details',
+      header: 'Детали',
+      meta: { align: 'text-left', className: 'text-left' },
+      cell: ({ row }) => {
+        const op = row.original;
+        const isCancelled = isCancelledStatus(op);
+        return (
+          <span className={`truncate block ${isCancelled ? 'line-through' : ''}`}>
+            {op.details}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'status',
+      header: 'Статус',
+      meta: { align: 'text-left', className: 'text-left' },
+      cell: ({ row }) => {
+        const op = row.original;
+        return (
+          <span className={`text-sm font-medium ${
+            op.status === 'Принято' || op.status === 'Проведено' ? 'text-green-600' :
+            op.status === 'В пути' ? 'text-blue-600' :
+            op.status === 'Черновик' ? 'text-amber-600' :
+            op.status === 'Отменено' ? 'text-red-600' :
+            'text-muted-foreground'
+          }`}>
+            {op.status}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'amount',
+      header: 'Сумма',
+      cell: ({ row }) => {
+        const op = row.original;
+        const isCancelled = isCancelledStatus(op);
+        return (
+          <span className={`font-medium ${isCancelled ? 'line-through' : ''}`}>
+            {op.amount != null
+              ? (op.amount > 0 ? `+${op.amount.toLocaleString()}` : op.amount.toLocaleString()) + ' сом'
+              : '—'}
+          </span>
+        );
+      },
+      meta: { align: 'text-right' },
+    },
+    {
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => {
+        const op = row.original;
+        const isCancelled = isCancelledStatus(op);
+
+        // Primary action
+        const primaryAction = op.type === 'delivery' && op.status === 'В пути' ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); receiveDelivery.mutate(op.id); }}
+            className="p-2 cursor-pointer rounded-md text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+            title="Принять поставку"
+          >
+            <PackageCheck className="w-3.5 h-3.5" />
+          </button>
+        ) : (op.type === 'write-off' || op.type === 'transfer') && op.status === 'Черновик' ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (op.type === 'write-off') postWo.mutate(op.id);
+              else postTransfer.mutate(op.id);
+            }}
+            className="p-2 cursor-pointer rounded-md text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+            title="Провести"
+          >
+            <Check className="w-3.5 h-3.5" />
+          </button>
+        ) : !isCancelled ? (
+          <EditButton onClick={() => navigate(op.editUrl)} />
+        ) : (
+          <span className="inline-block w-[30px]" />
+        );
+
+        // Cancel / Restore
+        const secondaryAction = isCancelled ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (op.type === 'delivery') restoreDelivery.mutate(op.id);
+              else if (op.type === 'write-off') restoreWo.mutate(op.id);
+              else if (op.type === 'transfer') restoreTransfer.mutate(op.id);
+            }}
+            className="p-2 cursor-pointer rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            title="Восстановить"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (op.type === 'delivery') cancelDelivery.mutate(op.id);
+              else if (op.type === 'write-off') cancelWo.mutate(op.id);
+              else if (op.type === 'transfer') cancelTransfer.mutate(op.id);
+            }}
+            className="p-2 cursor-pointer rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+            title="Отменить"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        );
+
+        return (
+          <div className="flex items-center">
+            {primaryAction}
+            {secondaryAction}
+          </div>
+        );
+      },
+    },
+  ], [receiveDelivery, postWo, postTransfer, cancelDelivery, cancelWo, cancelTransfer, restoreDelivery, restoreWo, restoreTransfer, navigate]);
+
+  const canExpand = (op: UnifiedOp) => op.items.length > 0;
+
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-8">
 
       {/* ═══ HEADER ═══ */}
-      <h2 className="text-2xl font-bold">Все операции</h2>
-
-      {/* ═══ PERIOD ═══ */}
-      <SegmentTabs
-        options={PERIOD_OPTIONS}
-        value={period}
-        onChange={(v) => { setPeriod(v); updateParam('period', v); }}
-      />
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">Все операции</h2>
+        <div className="flex items-center gap-2">
+          <AddButton onClick={() => navigate('/warehouse/deliveries/new')} label="+ Поставка" />
+          <AddButton onClick={() => navigate('/warehouse/write-offs/new')} label="+ Списание" />
+          <AddButton onClick={() => navigate('/warehouse/transfers/new')} label="+ Перемещение" />
+          <AddButton onClick={() => navigate('/warehouse/inventory')} label="+ Инвентаризация" />
+        </div>
+      </div>
 
       {/* ═══ FILTERS ═══ */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {/* Type filter */}
-        <SegmentTabs
-          options={[
-            { value: 'all' as const, label: 'Все' },
-            { value: 'delivery' as const, label: 'Поставки' },
-            { value: 'write-off' as const, label: 'Списания' },
-            { value: 'transfer' as const, label: 'Перемещения' },
-            { value: 'inventory' as const, label: 'Инвентаризации' },
-          ]}
-          value={typeFilter}
-          onChange={(v) => { setTypeFilter(v); updateParam('type', v); }}
-        />
-
-        <div className="w-px h-6 bg-border/40" />
-
-        {/* Warehouse filter */}
-        <SegmentTabs
-          options={[
-            { value: 'all', label: 'Все' },
-            ...warehouses.map((w) => ({ value: w.id, label: w.name })),
-          ]}
-          value={whFilter}
-          onChange={(v) => { setWhFilter(v); updateParam('warehouse', v); }}
-        />
-
-        <div className="w-px h-6 bg-border/40" />
-
-        {/* Search — inline with filters */}
+      <div className="mb-4 space-y-2">
+        {/* Search row */}
         <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5 w-56">
           <Search className="w-3.5 h-3.5 opacity-40 shrink-0" />
           <input
@@ -379,226 +496,150 @@ export function AllOperations() {
             </button>
           )}
         </div>
+
+        {/* Tabs row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <SegmentTabs
+            options={PERIOD_OPTIONS}
+            value={period}
+            onChange={(v) => { setPeriod(v); updateParam('period', v); }}
+          />
+
+          <SegmentTabs
+            options={[
+              { value: 'all' as const, label: 'Все' },
+              { value: 'delivery' as const, label: 'Поставки' },
+              { value: 'write-off' as const, label: 'Списания' },
+              { value: 'transfer' as const, label: 'Перемещения' },
+              { value: 'inventory' as const, label: 'Инвентаризации' },
+            ]}
+            value={typeFilter}
+            onChange={(v) => { setTypeFilter(v); updateParam('type', v); }}
+          />
+
+          <SegmentTabs
+            options={[
+              { value: 'all', label: 'Все' },
+              ...warehouses.map((w) => ({ value: w.id, label: w.name })),
+            ]}
+            value={whFilter}
+            onChange={(v) => { setWhFilter(v); updateParam('warehouse', v); }}
+          />
+        </div>
       </div>
 
       {/* ═══ TABLE ═══ */}
-      <div className="max-w-4xl">
-        {/* ColHeader — subtle divider */}
-        <div className="flex items-center gap-3 py-1.5 text-sm text-muted-foreground ">
-          <span className={`shrink-0 ${COL.date}`}>Дата</span>
-          <span className={`shrink-0 ${COL.warehouse}`}>Склад</span>
-          <span className={`shrink-0 ${COL.type}`}>Тип</span>
-          <span className="flex-1 min-w-0">Детали</span>
-          <span className={`shrink-0 ${COL.status} text-right`}>Статус</span>
-          <span className={`shrink-0 ${COL.amount} text-right`}>Сумма</span>
-          <span className={`shrink-0 ${COL.action}`} />
-          <span className={`shrink-0 ${COL.action}`} />
-        </div>
-
-        {filtered.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8">
-            {q || typeFilter !== 'all' || whFilter !== 'all'
-              ? 'Ничего не найдено — попробуйте изменить фильтры'
-              : 'Операций за период нет — создайте поставку или списание'}
-          </p>
-        )}
-
-        {filtered.map((op) => {
-          const isCancelled = isCancelledStatus(op);
-          const canExpand = op.items.length > 0;
-          const isExpanded = expandedId === `${op.type}-${op.id}`;
-
+      <DataTable
+        data={filtered}
+        columns={columns}
+        dense
+        emptyMessage={
+          q || typeFilter !== 'all' || whFilter !== 'all'
+            ? 'Ничего не найдено — попробуйте изменить фильтры'
+            : 'Операций за период нет — создайте поставку или списание'
+        }
+        expandedRows={expandedRows}
+        onExpandedChange={(rowId) => {
+          setExpandedRows(prev => {
+            const next = { ...prev };
+            if (next[rowId]) {
+              delete next[rowId];
+            } else {
+              next[rowId] = true;
+            }
+            return next;
+          });
+        }}
+        renderExpandedRow={(row) => {
+          const op = row.original;
+          if (op.items.length === 0) return null;
           return (
-            <div key={`${op.type}-${op.id}`}>
-              <div
-                className={`flex items-center gap-3 py-1.5 text-sm group ${
-                  canExpand ? 'cursor-pointer hover:bg-accent' : (op.type === 'inventory' ? 'cursor-pointer hover:bg-accent' : '')
-                } transition-colors ${
-                  isCancelled ? 'opacity-50' : ''
-                } ${isExpanded ? 'bg-black/[0.03]' : ''}`}
-                onClick={
-                  canExpand
-                    ? () => setExpandedId(isExpanded ? null : `${op.type}-${op.id}`)
-                    : op.type === 'inventory'
-                      ? () => navigate(op.editUrl)
-                      : undefined
-                }
-                tabIndex={canExpand || op.type === 'inventory' ? 0 : -1}
-                onKeyDown={canExpand
-                  ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setExpandedId(isExpanded ? null : `${op.type}-${op.id}`);
-                      }
-                    }
-                  : op.type === 'inventory'
-                    ? (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          navigate(op.editUrl);
-                        }
-                      }
-                    : undefined
-                }
-              >
-                {/* Date */}
-                <span className={`shrink-0 ${COL.date} text-muted-foreground ${isCancelled ? 'line-through' : ''}`}>
-                  {new Date(op.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
-                </span>
-
-                {/* Warehouse */}
-                <span className={`shrink-0 ${COL.warehouse} text-muted-foreground truncate ${isCancelled ? 'line-through' : ''}`}>
-                  {op.warehouseName}
-                </span>
-
-                {/* Type badge */}
-                <span className={`shrink-0 ${COL.type}`}>
-                  <Badge className={op.typeClass}>
-                    {op.typeLabel}
-                  </Badge>
-                </span>
-
-                {/* Details */}
-                <span className={`flex-1 min-w-0 truncate ${isCancelled ? 'line-through' : ''}`}>
-                  {op.details}
-                </span>
-
-                {/* Status */}
-                <span className={`shrink-0 ${COL.status} text-right`}>
-                  <span className={`text-sm font-medium ${
-                    op.status === 'Принято' || op.status === 'Проведено' ? 'text-green-600' :
-                    op.status === 'В пути' ? 'text-blue-600' :
-                    op.status === 'Черновик' ? 'text-amber-600' :
-                    op.status === 'Отменено' ? 'text-red-600' :
-                    'text-muted-foreground'
-                  }`}>
-                    {op.status}
-                  </span>
-                </span>
-
-                {/* Amount */}
-                <span className={`shrink-0 ${COL.amount} text-right tabular-nums font-medium ${isCancelled ? 'line-through' : ''}`}>
-                  {op.amount != null
-                    ? (op.amount > 0 ? `+${op.amount.toLocaleString()}` : op.amount.toLocaleString()) + ' сом'
-                    : '—'}
-                </span>
-
-                {/* Primary action — context-dependent */}
-                <span className={`shrink-0 ${COL.action} ${ROW_ACTION}`}>
-                  {op.type === 'delivery' && op.status === 'В пути' ? (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); receiveDelivery.mutate(op.id); }}
-                      className="p-2 cursor-pointer bg-transparent"
-                      title="Принять поставку"
-                    >
-                      <PackageCheck className="w-4 h-4 text-muted-foreground group-hover:text-emerald-600" />
-                    </button>
-                  ) : (op.type === 'write-off' || op.type === 'transfer') && op.status === 'Черновик' ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (op.type === 'write-off') postWo.mutate(op.id);
-                        else postTransfer.mutate(op.id);
-                      }}
-                      className="p-2 cursor-pointer bg-transparent"
-                      title="Провести"
-                    >
-                      <Check className="w-4 h-4 text-muted-foreground group-hover:text-emerald-600" />
-                    </button>
-                  ) : !isCancelled ? (
-                    <EditButton onClick={() => navigate(op.editUrl)} />
-                  ) : (
-                    <span />
-                  )}
-                </span>
-
-                {/* Cancel / Restore */}
-                <span className={`shrink-0 ${COL.action} ${ROW_ACTION}`}>
-                  {isCancelled ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (op.type === 'delivery') restoreDelivery.mutate(op.id);
-                        else if (op.type === 'write-off') restoreWo.mutate(op.id);
-                        else if (op.type === 'transfer') restoreTransfer.mutate(op.id);
-                      }}
-                      className="p-2 cursor-pointer bg-transparent"
-                      title="Восстановить"
-                    >
-                      <RotateCcw className="w-4 h-4 text-muted-foreground group-hover:text-foreground" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (op.type === 'delivery') cancelDelivery.mutate(op.id);
-                        else if (op.type === 'write-off') cancelWo.mutate(op.id);
-                        else if (op.type === 'transfer') cancelTransfer.mutate(op.id);
-                      }}
-                      className="p-2 cursor-pointer bg-transparent"
-                      title="Отменить"
-                    >
-                      <X className="w-4 h-4 text-muted-foreground group-hover:text-red-600" />
-                    </button>
-                  )}
-                </span>
-              </div>
-
-              {/* Expanded items */}
-              {isExpanded && canExpand && (
-                <div className="bg-black/[0.03] py-2 pl-8 pr-3">
-                  <table className="w-full max-w-lg text-sm">
-                    <thead>
-                      <tr className="text-muted-foreground">
-                        <th className="text-left font-medium py-0.5 pr-2">Ингредиент</th>
-                        <th className="text-right font-medium py-0.5 px-2 w-16">Кол-во</th>
-                        <th className="text-right font-medium py-0.5 px-2 w-16">Цена</th>
-                        <th className="text-right font-medium py-0.5 pl-2 w-20">Итого</th>
-                      </tr>
-                    </thead>
-                    <tbody className="before:content-[''] before:block before:h-1">
-                      {op.items.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="py-0.5 pr-2">{item.name}{item.reason && <span className="text-muted-foreground"> ({item.reason})</span>}</td>
-                          <td className="py-0.5 px-2 text-right tabular-nums">{item.quantity} {item.unit}</td>
-                          <td className="py-0.5 px-2 text-right tabular-nums">{item.price != null ? `${item.price.toLocaleString('ru-RU')} сом` : '—'}</td>
-                          <td className="py-0.5 pl-2 text-right tabular-nums">{item.total != null ? `${(item.total ?? item.quantity * (item.price ?? 0)).toLocaleString('ru-RU')} сом` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <table className="w-full max-w-lg text-sm">
+              <thead>
+                <tr className="text-muted-foreground">
+                  <th className="text-left font-medium py-0.5 pr-2">Ингредиент</th>
+                  <th className="text-right font-medium py-0.5 px-2 w-16">Кол-во</th>
+                  <th className="text-right font-medium py-0.5 px-2 w-16">Цена</th>
+                  <th className="text-right font-medium py-0.5 pl-2 w-20">Итого</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colSpan={4} className="py-0.5" /></tr>
+                {op.items.map((item, idx) => (
+                  <tr key={idx}>
+                    <td className="py-0.5 pr-2">
+                      {item.name}
+                      {item.reason && <span className="text-muted-foreground"> ({item.reason})</span>}
+                    </td>
+                    <td className="py-0.5 px-2 text-right">{item.quantity} {item.unit}</td>
+                    <td className="py-0.5 px-2 text-right">
+                      {item.price != null ? `${item.price.toLocaleString('ru-RU')} сом` : '—'}
+                    </td>
+                    <td className="py-0.5 pl-2 text-right">
+                      {item.total != null
+                        ? `${(item.total ?? item.quantity * (item.price ?? 0)).toLocaleString('ru-RU')} сом`
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           );
-        })}
+        }}
+        getRowId={(op) => `${op.type}-${op.id}`}
+        getRowClassName={(row) => {
+          const op = row.original;
+          const classes: string[] = ['group'];
+          if (isCancelledStatus(op)) classes.push('opacity-50');
+          if (canExpand(op) || op.type === 'inventory') classes.push('cursor-pointer');
+          return classes.join(' ');
+        }}
+        onRowClick={(row) => {
+          const op = row.original;
+          if (canExpand(op)) {
+            setExpandedRows(prev => {
+              const rowId = `${op.type}-${op.id}`;
+              const next = { ...prev };
+              if (next[rowId]) {
+                delete next[rowId];
+              } else {
+                next[rowId] = true;
+              }
+              return next;
+            });
+          } else if (op.type === 'inventory') {
+            navigate(op.editUrl);
+          }
+        }}
+        className="max-w-4xl"
+      />
 
-        {/* ─── Summary ─── */}
-        {(summary.deliveries > 0 || summary.writeOffs > 0 || summary.inventories > 0) && (
-          <div className="flex items-center gap-3 py-2 text-sm border-t border-border/40 mt-1 text-muted-foreground">
-            <span className={`shrink-0 ${COL.date}`} />
-            <span className={`shrink-0 ${COL.warehouse}`} />
-            <span className={`shrink-0 ${COL.type}`} />
-            <span className="flex-1 min-w-0">Итого за период</span>
-            <span className={`shrink-0 ${COL.status} text-right`} />
-            <span className={`shrink-0 ${COL.amount} text-right tabular-nums font-medium text-foreground`}>
-              {(() => {
-                const parts: string[] = [];
-                if (summary.deliveries > 0) parts.push(`+${Math.round(summary.delTotal).toLocaleString()}`);
-                if (summary.writeOffs > 0) parts.push(`${Math.round(summary.woTotal).toLocaleString()}`);
-                if (summary.inventories > 0) parts.push((summary.invTotal >= 0 ? '+' : '') + Math.round(summary.invTotal).toLocaleString());
-                return parts.length > 0 ? parts.join(' ') + ' сом' : '—';
-              })()}
+      {/* ═══ SUMMARY ═══ */}
+      {(summary.deliveries > 0 || summary.writeOffs > 0 || summary.inventories > 0) && (
+        <div className="max-w-4xl mt-2 py-2 text-sm border-t border-border/40">
+
+          {summary.deliveries > 0 && (
+            <span className="text-foreground font-medium">
+              Поставки <span className="text-emerald-600">+{Math.round(summary.delTotal).toLocaleString()} сом</span>
             </span>
-            <span className={`shrink-0 ${COL.action}`} />
-            <span className={`shrink-0 ${COL.action}`} />
-          </div>
-        )}
-      </div>
+          )}
+          {summary.deliveries > 0 && (summary.writeOffs > 0 || summary.inventories > 0) && <span className="mx-1.5">·</span>}
+          {summary.writeOffs > 0 && (
+            <span className="text-foreground font-medium">
+              Списания <span className="text-red-600">−{Math.round(summary.woTotal).toLocaleString()} сом</span>
+            </span>
+          )}
+          {summary.writeOffs > 0 && summary.inventories > 0 && <span className="mx-1.5">·</span>}
+          {summary.inventories > 0 && (
+            <span className="text-foreground font-medium">
+              Инвентаризации{' '}
+              <span className={summary.invTotal >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                {summary.invTotal >= 0 ? '+' : ''}{Math.round(summary.invTotal).toLocaleString()} сом
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
     </div>
   );

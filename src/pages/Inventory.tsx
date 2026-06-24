@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
+import { type ColumnDef } from '@tanstack/react-table';
+import { DataTable } from '@/components/ui/DataTable';
 import { toast } from 'sonner';
 import { ArrowLeft, Check, Search } from 'lucide-react';
 import { SearchInput } from '@/components/ui/SearchInput';
@@ -377,6 +379,64 @@ export function Inventory() {
   setCountingItems([]);
  };
 
+ // --- History columns ---
+ const historyColumns = useMemo<ColumnDef<InventoryActRow, any>[]>(() => [
+  {
+   id: 'date',
+   header: 'Дата',
+   cell: ({ row }) => (
+    <span className="text-sm">
+     {new Date(row.original.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
+    </span>
+   ),
+  },
+  {
+   id: 'warehouse',
+   header: 'Склад',
+   meta: { align: 'text-left', className: 'text-left' },
+   cell: ({ row }) => <span className="text-sm truncate block">{row.original.warehouse}</span>,
+  },
+  {
+   id: 'status',
+   header: 'Статус',
+   meta: { align: 'text-left', className: 'text-left' },
+   cell: ({ row }) => <span className={`text-sm ${getStatusColor(row.original.status)}`}>{row.original.status}</span>,
+  },
+  {
+   id: 'result',
+   header: 'Результат',
+   cell: ({ row }) => {
+    const inv = row.original;
+    return (
+     <span className={`text-sm font-medium ${inv.result < 0 ? 'text-red-600' : 'text-green-600'}`}>
+      {inv.result > 0 ? '+' : ''}{somRounded(inv.result).toLocaleString()} сом
+     </span>
+    );
+   },
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'actions',
+   header: '',
+   cell: ({ row }) => {
+    const inv = row.original;
+    if (inv.status !== 'Черновик') return null;
+    return (
+     <div className="flex items-center gap-1">
+      <button
+       type="button"
+       onClick={(e) => { e.stopPropagation(); handleContinueDraft(inv); }}
+       className="text-sm font-medium text-primary hover:text-primary/70 transition-colors px-2"
+      >
+       Продолжить
+      </button>
+      <DeleteButton onClick={(e) => { e.stopPropagation(); handleDeleteSession(inv.id); }} />
+     </div>
+    );
+   },
+  },
+ ], [handleContinueDraft, handleDeleteSession]);
+
  // --- History ---
  if (step === 'history') {
   const filtered = inventories.filter(
@@ -407,65 +467,15 @@ export function Inventory() {
 
     {invLoading && <p className="text-sm text-muted-foreground py-4">Загрузка…</p>}
 
-    <div className="max-w-4xl">
-    <table className="table-fixed border-separate border-spacing-0 w-full">
-     <thead className="sticky top-0 z-10 bg-background">
-      <tr className="text-sm font-medium text-foreground">
-       <th scope="col" className="text-left py-1.5 px-3 w-[100px]">Дата</th>
-       <th scope="col" className="text-left py-1.5 px-3 w-[180px]">Склад</th>
-       <th scope="col" className="text-center py-1.5 px-3 w-[120px]">Статус</th>
-       <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Результат</th>
-       <th scope="col" className="py-1.5 px-3 w-[140px]" />
-       <th scope="col" className="w-[32px]" />
-      </tr>
-     </thead>
-     <tbody>
-      {filtered.map((inv) => {
-       const isDraft = inv.status === 'Черновик';
-       return (
-       <tr
-         key={inv.id}
-         className="group hover:bg-muted/30 transition-colors"
-        >
-        <td className="py-1.5 px-3 text-sm">
-           {new Date(inv.date).toLocaleDateString('ru-RU', {
-            day: 'numeric',
-            month: 'long',
-           })}
-        </td>
-         <td className="py-1.5 px-3 text-sm truncate">{inv.warehouse}</td>
-         <td className="py-1.5 px-3 text-center text-sm"><span className={getStatusColor(inv.status)}>{inv.status}</span></td>
-        <td className={`py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap font-medium ${inv.result < 0 ? 'text-red-600' : 'text-green-600'}`}>
-           {inv.result > 0 ? '+' : ''}
-           {somRounded(inv.result).toLocaleString()} сом
-        </td>
-         <td className="py-1.5 px-3">
-           {isDraft && (
-            <button
-             type="button"
-             onClick={() => handleContinueDraft(inv)}
-             className="text-sm font-medium text-primary hover:text-primary/70 transition-colors"
-            >
-             Продолжить
-            </button>
-           )}
-         </td>
-         <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
-           {isDraft && (
-            <DeleteButton onClick={() => handleDeleteSession(inv.id)} />
-           )}
-         </td>
-        </tr>
-       );
-      })}
-      {!invLoading && filtered.length === 0 && (
-       <tr><td colSpan={6} className="py-12 text-center text-sm">
-        Нет записей
-       </td></tr>
-      )}
-    </tbody>
-    </table>
-    </div>
+    {!invLoading && (
+     <DataTable
+      data={filtered}
+      columns={historyColumns}
+      dense
+      emptyMessage="Нет записей"
+      className="max-w-4xl"
+     />
+    )}
    </div>
   );
  }
@@ -635,6 +645,98 @@ export function Inventory() {
   );
  }
 
+ // --- Counting columns ---
+ const countingColumns = useMemo<ColumnDef<CountRow, any>[]>(() => [
+  {
+   id: 'name',
+   header: 'Наименование',
+   meta: { align: 'text-left', className: 'text-left' },
+   cell: ({ row }) => <div className="text-sm font-medium truncate">{row.original.name}</div>,
+  },
+  {
+   id: 'start',
+   header: 'Нач. ост.',
+   cell: ({ row }) => <span className="text-sm">{row.original.start} {row.original.unit}</span>,
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'incoming',
+   header: 'Поступл.',
+   cell: ({ row }) => <span className="text-sm text-blue-600 font-medium">+{row.original.incoming} {row.original.unit}</span>,
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'consumption',
+   header: 'Расход',
+   cell: ({ row }) => <span className="text-sm text-amber-600 font-medium">-{row.original.consumption} {row.original.unit}</span>,
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'writeoff',
+   header: 'Списано',
+   cell: ({ row }) => <span className="text-sm text-red-600 font-medium">-{row.original.writeoff} {row.original.unit}</span>,
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'theoretical',
+   header: 'План. ост.',
+   cell: ({ row }) => <span className="text-sm bg-blue-50/50 py-1 rounded">{row.original.theoretical} {row.original.unit}</span>,
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'actual',
+   header: 'Факт. ост.',
+   cell: ({ row }) => {
+    const item = row.original;
+    return (
+     <div className="relative">
+      <input
+       type="number"
+       className="w-full pl-2 pr-8 py-0.5 border rounded text-sm bg-background text-right outline-none focus:border-primary"
+       placeholder="0.00"
+       value={item.actual}
+       onChange={(e) => handleActualChange(item.id, e.target.value)}
+      />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+       {item.unit}
+      </span>
+     </div>
+    );
+   },
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'diff',
+   header: 'Разница',
+   cell: ({ row }) => {
+    const item = row.original;
+    if (item.actual === '') return <span className="text-muted-foreground text-sm">—</span>;
+    const actualNum = parseFloat(item.actual) || 0;
+    const diff = actualNum - item.theoretical;
+    const color = diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-muted-foreground';
+    const label = (diff > 0 ? `+${diff.toFixed(3)}` : diff.toFixed(3)) + ` ${item.unit}`;
+    return <span className={`text-sm ${color}`}>{label}</span>;
+   },
+   meta: { align: 'text-right' },
+  },
+  {
+   id: 'diffSom',
+   header: 'Разница, сом',
+   cell: ({ row }) => {
+    const item = row.original;
+    if (item.actual === '') return <span className="text-muted-foreground text-sm">—</span>;
+    const actualNum = parseFloat(item.actual) || 0;
+    const diff = actualNum - item.theoretical;
+    const diffSom = diff * item.price;
+    const roundedSom = somRounded(diffSom);
+    const color = diffSom < 0 ? 'text-red-600' : diffSom > 0 ? 'text-green-600' : 'text-muted-foreground';
+    const label = (roundedSom > 0 ? `+${roundedSom.toLocaleString()}` : roundedSom.toLocaleString()) + ' сом';
+    return <span className={`text-sm ${color}`}>{label}</span>;
+   },
+   meta: { align: 'text-right' },
+  },
+ ], [handleActualChange]);
+
  // --- Counting ---
  const selectedSkladName =
   warehouses.find((w) => w.id === selectedWorkshopId)?.name || 'Склад';
@@ -678,85 +780,15 @@ export function Inventory() {
     </div>
    )}
 
-   <div className="max-w-4xl">
-   <table className="table-fixed border-separate border-spacing-0 w-full">
-    <thead className="sticky top-0 z-10 bg-background">
-     <tr className="text-sm font-medium text-foreground">
-      <th scope="col" className="text-left py-1.5 px-3 w-[200px]">Наименование</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Нач. ост.</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Поступл.</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Расход</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[80px]">Списано</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[90px]">План. ост.</th>
-      <th scope="col" className="text-center py-1.5 px-3 w-[110px]">Факт. ост.</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[90px]">Разница</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Разница, сом</th>
-     </tr>
-    </thead>
-    <tbody>
-     {countingRowsLoading && (
-      <tr><td colSpan={9} className="py-12 text-center text-sm">Загрузка позиций…</td></tr>
-     )}
-     {!countingRowsLoading &&
-      countingItems.map((item) => {
-      const actualNum = parseFloat(item.actual) || 0;
-      const diff = item.actual === '' ? 0 : actualNum - item.theoretical;
-      const diffSom = diff * item.price;
-      const roundedSom = somRounded(diffSom);
-
-      return (
-       <tr
-        key={item.id}
-        className="group hover:bg-muted/30 transition-colors border-b border-muted/30"
-       >
-        <td className="py-1.5 px-3 min-w-0">
-         <div className="text-sm font-medium truncate">{item.name}</div>
-        </td>
-        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm">{item.start} {item.unit}</td>
-        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm text-blue-600 font-medium">+{item.incoming} {item.unit}</td>
-        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm text-amber-600 font-medium">-{item.consumption} {item.unit}</td>
-        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm text-red-600 font-medium">-{item.writeoff} {item.unit}</td>
-        <td className="py-1.5 px-3 text-right tabular-nums whitespace-nowrap text-sm bg-blue-50/50 py-1 rounded">{item.theoretical} {item.unit}</td>
-        <td className="py-1.5 px-3">
-          <input
-           type="number"
-           className="w-full pl-2 pr-8 py-0.5 border rounded text-sm bg-background text-right tabular-nums whitespace-nowrap outline-none focus:border-primary"
-           placeholder="0.00"
-           value={item.actual}
-           onChange={(e) => handleActualChange(item.id, e.target.value)}
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
-           {item.unit}
-          </span>
-         </td>
-         <td
-          className={`pr-2 text-right tabular-nums whitespace-nowrap text-sm ${
-           diff < 0 ? 'text-red-600' : diff > 0 ? 'text-green-600' : 'text-muted-foreground'
-          }`}
-         >
-          {item.actual === ''
-           ? '—'
-           : (diff > 0 ? `+${diff.toFixed(3)}` : diff.toFixed(3)) + ` ${item.unit}`}
-         </td>
-         <td
-          className={`pr-6 text-right tabular-nums whitespace-nowrap text-sm ${
-           diffSom < 0 ? 'text-red-600' : diffSom > 0 ? 'text-green-600' : 'text-muted-foreground'
-          }`}
-         >
-          {item.actual === ''
-           ? '—'
-           : (roundedSom > 0 ? `+${roundedSom.toLocaleString()}` : roundedSom.toLocaleString())}{' '}
-          сом
-         </td>
-        </tr>
-      );
-     })}
-     {!countingRowsLoading && countingItems.length === 0 && !countingError && (
-      <tr><td colSpan={9} className="py-12 text-center text-sm">Нет позиций для сверки</td></tr>
-     )}
-    </tbody>
-   </table>
-   </div>
+   <DataTable
+    data={countingItems}
+    columns={countingColumns}
+    dense
+    isLoading={countingRowsLoading}
+    error={countingError ? new Error(countingError) : null}
+    emptyMessage="Нет позиций для сверки"
+    className="max-w-4xl"
+   />
   </div>
  );
 }

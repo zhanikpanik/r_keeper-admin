@@ -38,7 +38,7 @@ export function DeadItemAlert({ id, message, productId }: DeadItemAlertProps) {
         type="button"
         onClick={handleDeactivate}
         disabled={deactivating}
-        className="shrink-0 px-2.5 py-1 text-xs font-medium rounded-lg bg-info/10 text-info hover:bg-info/20 transition-colors disabled:opacity-50"
+        className="shrink-0 px-2.5 py-1 text-sm font-medium rounded-lg bg-info/10 text-info hover:bg-info/20 transition-colors disabled:opacity-50"
       >
         {deactivating ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Деактивировать'}
       </button>

@@ -187,23 +187,23 @@ export function DesignPage() {
         <table className="table-fixed border-separate border-spacing-0 w-full max-w-4xl">
           <thead>
             <tr className="text-sm text-muted-foreground">
-              <th scope="col" className="text-left font-medium py-1.5 pr-3 w-[40px]" />
-              <th scope="col" className="text-left font-medium py-1.5 px-3 w-[180px]">Название</th>
-              <th scope="col" className="text-left font-medium py-1.5 px-3 w-[140px]">Категория</th>
-              <th scope="col" className="text-right font-medium py-1.5 px-3 w-[100px]">Цена</th>
-              <th scope="col" className="text-right font-medium py-1.5 px-3 w-[90px]">Наценка</th>
+              <th scope="col" className="text-left font-medium py-1.5 w-[40px]" />
+              <th scope="col" className="text-left font-medium py-1.5 w-[180px]">Название</th>
+              <th scope="col" className="text-left font-medium py-1.5 w-[140px]">Категория</th>
+              <th scope="col" className="text-right font-medium py-1.5 w-[100px]">Цена</th>
+              <th scope="col" className="text-right font-medium py-1.5 w-[90px]">Наценка</th>
               <th scope="col" className="w-[40px]" />
               <th scope="col" className="w-[40px]" />
             </tr>
           </thead>
           <tbody className="before:content-[''] before:block before:h-2">
             <tr className="group hover:bg-black/[0.03] transition-colors cursor-pointer">
-              <td className="py-1.5 pr-3 text-center"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mx-auto" /></td>
-              <td className="py-1.5 px-3 text-sm">Латте</td>
-              <td className="py-1.5 px-3 text-sm text-muted-foreground">Кофе</td>
-              <td className="py-1.5 px-3 text-sm text-right tabular-nums">350 сом</td>
-              <td className="py-1.5 px-3 text-sm text-right tabular-nums"><span className="text-green-600">250%</span></td>
-              <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
+              <td className="py-1.5 text-center"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mx-auto" /></td>
+              <td className="py-1.5 text-sm">Латте</td>
+              <td className="py-1.5 text-sm text-muted-foreground">Кофе</td>
+              <td className="py-1.5 text-sm text-right tabular-nums">350 сом</td>
+              <td className="py-1.5 text-sm text-right tabular-nums"><span className="text-green-600">250%</span></td>
+              <td className="py-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
                 <EditButton onClick={() => {}} />
               </td>
               <td className="py-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
@@ -211,11 +211,11 @@ export function DesignPage() {
               </td>
             </tr>
             <tr className="group hover:bg-black/[0.03] transition-colors cursor-pointer">
-              <td className="py-1.5 pr-3 text-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-300 mx-auto" /></td>
-              <td className="py-1.5 px-3 text-sm text-muted-foreground">Сэндвич с лососем</td>
-              <td className="py-1.5 px-3 text-sm text-muted-foreground">Завтраки</td>
-              <td className="py-1.5 px-3 text-sm text-right tabular-nums">480 сом</td>
-              <td className="py-1.5 px-3 text-sm text-right tabular-nums">140%</td>
+              <td className="py-1.5 text-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-300 mx-auto" /></td>
+              <td className="py-1.5 text-sm text-muted-foreground">Сэндвич с лососем</td>
+              <td className="py-1.5 text-sm text-muted-foreground">Завтраки</td>
+              <td className="py-1.5 text-sm text-right tabular-nums">480 сом</td>
+              <td className="py-1.5 text-sm text-right tabular-nums">140%</td>
               <td className="py-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
                 <DeleteButton variant="row" onClick={() => {}} />
               </td>
@@ -327,21 +327,21 @@ export function DesignPage() {
         <table className="table-fixed border-separate border-spacing-0 w-full max-w-4xl">
           <thead>
             <tr className="text-sm text-muted-foreground">
-              <th scope="col" className="text-left font-medium py-1.5 pr-3 w-[40px]" />
-              <th scope="col" className="text-left font-medium py-1.5 px-3 w-[180px]">Название</th>
-              <th scope="col" className="text-left font-medium py-1.5 px-3 w-[140px]">Категория</th>
-              <th scope="col" className="text-right font-medium py-1.5 px-3 w-[100px]">Цена</th>
-              <th scope="col" className="text-right font-medium py-1.5 px-3 w-[90px]">Наценка</th>
+              <th scope="col" className="text-left font-medium py-1.5 w-[40px]" />
+              <th scope="col" className="text-left font-medium py-1.5 w-[180px]">Название</th>
+              <th scope="col" className="text-left font-medium py-1.5 w-[140px]">Категория</th>
+              <th scope="col" className="text-right font-medium py-1.5 w-[100px]">Цена</th>
+              <th scope="col" className="text-right font-medium py-1.5 w-[90px]">Наценка</th>
               <th scope="col" className="w-[40px]" />
             </tr>
           </thead>
           <tbody className="before:content-[''] before:block before:h-2">
             <tr className="group hover:bg-black/[0.03] transition-colors cursor-pointer">
-              <td className="py-1.5 pr-3 text-center"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mx-auto" /></td>
-              <td className="py-1.5 px-3 text-sm">Латте</td>
-              <td className="py-1.5 px-3 text-sm text-muted-foreground">Кофе</td>
-              <td className="py-1.5 px-3 text-sm text-right tabular-nums">350 сом</td>
-              <td className="py-1.5 px-3 text-sm text-right tabular-nums"><span className="text-green-600">250%</span></td>
+              <td className="py-1.5 text-center"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mx-auto" /></td>
+              <td className="py-1.5 text-sm">Латте</td>
+              <td className="py-1.5 text-sm text-muted-foreground">Кофе</td>
+              <td className="py-1.5 text-sm text-right tabular-nums">350 сом</td>
+              <td className="py-1.5 text-sm text-right tabular-nums"><span className="text-green-600">250%</span></td>
               <td className="py-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
                 <DeleteButton variant="row" onClick={() => {}} />
               </td>

@@ -17,7 +17,7 @@ export function EditButton({ onClick, className = '' }: EditButtonProps) {
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={`p-2 rounded-md text-muted-foreground group-hover:bg-secondary hover:bg-accent hover:text-foreground transition-colors cursor-pointer ${className}`}
     >
-      <Pencil className="w-4 h-4" />
+      <Pencil className="w-3.5 h-3.5" />
     </button>
   );
 }

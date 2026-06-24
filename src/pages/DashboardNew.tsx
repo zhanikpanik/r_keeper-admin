@@ -1,79 +1,114 @@
 import { useState, useMemo } from 'react';
-import { ArrowDownRight, Banknote, Receipt, Users, Calculator, Wallet, Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { type ColumnDef } from '@tanstack/react-table';
 import warehouseIcon from '@/assets/icons/warehouse.svg?raw';
 import clockIcon from '@/assets/icons/clock.svg?raw';
 import receiptIcon from '@/assets/icons/sheet-of-paper.svg?raw';
 import walletIcon from '@/assets/icons/wallet.svg?raw';
-import undoIcon from '@/assets/icons/undo.svg?raw';
-import clipboardIcon from '@/assets/icons/clipboard.svg?raw';
 import truckIcon from '@/assets/icons/truck.svg?raw';
+import ReactECharts from 'echarts-for-react';
+import { CHART_MUTED, TOOLTIP_STYLE } from '@/lib/chartTheme';
 import { useDashboardNewData, type DashboardPeriod } from '@/hooks/useDashboardNewData';
 import { getMockData } from '@/hooks/useDashboardMockData';
 import { SegmentTabs } from '@/components/ui/SegmentTabs';
+import { DataTable } from '@/components/ui/DataTable';
 import { ActionBar } from '@/components/dashboard/ActionBar';
-import { MetricCard } from '@/components/dashboard/MetricCard';
 import { AlertCard } from '@/components/dashboard/AlertCard';
 import { MigrationCard } from '@/components/dashboard/MigrationCard';
 import { ChronologyFeed } from '@/components/dashboard/ChronologyFeed';
-import type { Alert } from '@/types/dashboard';
-
-const metricIcons = [Banknote, Calculator, Receipt, ArrowDownRight, Users, Wallet];
+import type { Alert, TopDish } from '@/types/dashboard';
 
 const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
-  { value: 'today', label: 'Сегодня' },
   { value: 'week', label: 'Неделя' },
   { value: 'month', label: 'Месяц' },
 ];
 
-/** Domain display config */
-const DOMAINS: Record<string, { label: string; iconRaw?: string; icon: typeof AlertTriangle }> = {
-  warehouse: { label: 'Склад', iconRaw: warehouseIcon, icon: Package },
-  cash: { label: 'Касса', iconRaw: walletIcon, icon: Wallet },
-  checks: { label: 'Чеки', iconRaw: receiptIcon, icon: Receipt },
-  staff: { label: 'Персонал', iconRaw: undoIcon, icon: Users },
-  menu: { label: 'Меню', icon: AlertTriangle },
-};
-
-function fmtSom(n: number): string {
-  return n.toLocaleString('ru-RU');
+function fmtSom(n: number | undefined | null): string {
+  if (n == null) return '0';
+  return Math.round(n).toLocaleString('ru-RU');
 }
 
-function formatPeriodRange(period: DashboardPeriod): string {
+function formatPeriodRange(period: DashboardPeriod, offset: number = 0): string {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const fmt = (d: Date) => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-
   switch (period) {
-    case 'today':
-      return fmt(today);
+    case 'today': return fmt(today);
     case 'week': {
-      const weekAgo = new Date(today.getTime() - 6 * 86400000);
-      return `${fmt(weekAgo)} – ${fmt(today)}`;
+      const refDate = new Date(today.getTime() + offset * 7 * 86400000);
+      const weekAgo = new Date(refDate.getTime() - 6 * 86400000);
+      return `${fmt(weekAgo)} – ${fmt(refDate)}`;
     }
     case 'month': {
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      return `${fmt(monthStart)} – ${fmt(today)}`;
+      const refMonth = today.getMonth() + offset;
+      const refYear = today.getFullYear() + Math.floor(refMonth / 12);
+      const normalizedMonth = ((refMonth % 12) + 12) % 12;
+      const monthStart = new Date(refYear, normalizedMonth, 1);
+      const monthEnd = offset === 0 ? today : new Date(refYear, normalizedMonth + 1, 0);
+      return `${fmt(monthStart)} – ${fmt(monthEnd)}`;
     }
   }
 }
 
+function formatTodayDate(): string {
+  const now = new Date();
+  return now.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+}
+
+function getDayOfWeek(date: Date): string {
+  return date.toLocaleDateString('ru-RU', { weekday: 'short' }).replace('.', '');
+}
+
 function alertIconSrc(id: string): string | undefined {
-  if (id.startsWith('stock') || id === 'stock') return warehouseIcon;
-  if (id.startsWith('shift-') || id === 'no-shift-orders') return clockIcon;
-  if (id.startsWith('anomaly-check') || id.startsWith('suspicious-check')) return receiptIcon;
-  if (id.startsWith('shift-discrepancy') || id.startsWith('blank-expense')) return walletIcon;
-  if (id.startsWith('many-refund') || id.startsWith('staff-refund')) return undoIcon;
-  if (id.startsWith('no-inventory') || id.startsWith('stale-inventory')) return clipboardIcon;
+  if (id.startsWith('stock')) return warehouseIcon;
+  if (id === 'yesterday-shift-open') return clockIcon;
+  if (id.startsWith('yesterday-shift')) return clockIcon;
+  if (id.startsWith('suspicious-check') || id.startsWith('yesterday-stuck') || id === 'stuck-orders' || id === 'many-refunds') return receiptIcon;
+  if (id.startsWith('shift-discrepancy')) return walletIcon;
   if (id.startsWith('anomaly-delivery')) return truckIcon;
   return undefined;
 }
 
+function Sparkline({ data, format, dayLabels }: { data: number[]; format: MetricFormat; dayLabels: string[] }) {
+  if (!data || data.length === 0 || data.every(v => v === 0)) return null;
+
+  const fmtVal = (v: number) => {
+    if (format === 'percent') return `${v}%`;
+    if (format === 'count') return String(v);
+    return `${fmtSom(Math.round(v))} с`;
+  };
+
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      ...TOOLTIP_STYLE,
+      formatter: (params: unknown) => {
+        const items = params as { axisValue: string; value: number }[];
+        if (!items?.length) return '';
+        const item = items[0];
+        return `<div style="font-weight:600;margin-bottom:2px">${item.axisValue}</div><span>${fmtVal(item.value)}</span>`;
+      },
+    },
+    grid: { top: 2, right: 0, bottom: 2, left: 0 },
+    xAxis: { type: 'category', data: dayLabels, show: false },
+    yAxis: { type: 'value', show: false, min: (val: { min: number }) => val.min - (val.min * 0.1) },
+    series: [{
+      type: 'line', data, smooth: false, symbol: 'none',
+      lineStyle: { color: CHART_MUTED, width: 1.5 },
+      areaStyle: { color: 'rgba(100, 116, 139, 0.12)' },
+    }],
+  };
+
+  return <ReactECharts option={option} style={{ width: 160, height: 32 }} notMerge />;
+}
+
+type MetricFormat = 'som' | 'count' | 'percent';
 const MOCK = false;
 
 export function Dashboard() {
-  const [period, setPeriod] = useState<DashboardPeriod>('today');
+  const [period, setPeriod] = useState<DashboardPeriod>('week');
+  const [periodOffset, setPeriodOffset] = useState(0);
 
-  const realQuery = useDashboardNewData(period);
+  const realQuery = useDashboardNewData(period, periodOffset);
   const mockData = MOCK ? getMockData(period) : null;
 
   const data = mockData ?? realQuery.data;
@@ -84,38 +119,15 @@ export function Dashboard() {
   const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
   const [dismissedMigrationIds, setDismissedMigrationIds] = useState<Set<string>>(new Set());
 
-  // Group alerts by DOMAIN (not severity)
-  const alertsByDomain = useMemo(() => {
-    if (!data) return new Map<string, Alert[]>();
-    const cards = data.migrationCards ?? [];
-    const migrationDomains = new Set<string>(cards
-      .filter((c) => !dismissedMigrationIds.has(c.id))
-      .map((c) => {
-        if (c.id === 'migrate-warehouse') return 'warehouse';
-        if (c.id === 'migrate-checks') return 'checks';
-        if (c.id === 'migrate-cash') return 'cash';
-        return '';
-      }));
+  const urgencyGroups = useMemo(() => {
+    if (!data?.alertUrgencyGroups) return null;
+    const { urgent, important, background } = data.alertUrgencyGroups;
+    const filter = (arr: Alert[]) => arr.filter((a) => !dismissedAlertIds.has(a.id));
+    return { urgent: filter(urgent), important: filter(important), background: filter(background) };
+  }, [data, dismissedAlertIds]);
 
-    const active = (data.alerts ?? []).filter(
-      (a) => !dismissedAlertIds.has(a.id) && !migrationDomains.has(a.domain),
-    );
-
-    const map = new Map<string, Alert[]>();
-    for (const a of active) {
-      const domain = a.domain || 'other';
-      if (!map.has(domain)) map.set(domain, []);
-      map.get(domain)!.push(a);
-    }
-    return map;
-  }, [data, dismissedAlertIds, dismissedMigrationIds]);
-
-  const totalAlerts = [...alertsByDomain.values()].reduce((s, arr) => s + arr.length, 0);
-
-  const migrationCards = useMemo(() => {
-    if (!data) return [];
-    return (data.migrationCards ?? []).filter((c) => !dismissedMigrationIds.has(c.id));
-  }, [data, dismissedMigrationIds]);
+  const totalAlerts = urgencyGroups
+    ? urgencyGroups.urgent.length + urgencyGroups.important.length + urgencyGroups.background.length : 0;
 
   if (isError) {
     return (
@@ -131,84 +143,160 @@ export function Dashboard() {
   }
 
   const metrics = data?.metrics ?? [];
-  const yesterday = data?.yesterday;
+  const yesterdayShift = data?.yesterdayShift;
   const chronology = data?.chronology ?? [];
-  const totalAlertCount = data?.totalAlertCount ?? 0;
   const criticalCount = data?.criticalCount ?? 0;
-
   const hasAlerts = totalAlerts > 0;
-  const hasMigration = migrationCards.length > 0;
-  const periodRange = formatPeriodRange(period);
-  const hasYesterday = period === 'today' && yesterday && yesterday.revenue != null;
+  const todayDate = formatTodayDate();
+  const lastWeekDay = getDayOfWeek(new Date(Date.now() - 7 * 86400000));
 
-  // Status bar data
-  const statusRevenue = metrics.length > 0 ? metrics[0] : null;
-  const openOrdersMetric = metrics.find(m => m.label === 'Открыто');
-  const shiftHoursMetric = data?.shiftStatus?.hoursOpen;
-  const isAllGood = !hasAlerts && !hasMigration;
+  const sparklineDayLabels = useMemo(() => {
+    const labels: string[] = [];
+    for (let d = 6; d >= 0; d--) {
+      const date = new Date(Date.now() - d * 86400000);
+      labels.push(date.toLocaleDateString('ru-RU', { weekday: 'short' }).replace('.', ''));
+    }
+    return labels;
+  }, []);
+
+  const sparklineDailyData = useMemo(() => {
+    if (!data) return null;
+    return [data.dailyRevenues, data.dailyChecks, data.dailyAvgChecks, data.dailyExpenses, null] as const;
+  }, [data]);
+
+  const dishColumns = useMemo<ColumnDef<TopDish, any>[]>(() => [
+    { accessorKey: 'name', header: 'Блюдо', cell: ({ getValue }) => <span className="text-foreground">{getValue<string>()}</span> },
+    { accessorKey: 'revenue', header: 'Выручка', cell: ({ getValue }) => <>{fmtSom(getValue<number>())} с</> },
+    { accessorKey: 'margin', header: 'Прибыль', cell: ({ row }) => { const m = row.original.margin; return <span className={m < 0 ? 'text-destructive' : 'text-success'}>{fmtSom(m)} с</span>; } },
+    { id: 'marginPercent', header: 'Прибыль %',
+      cell: ({ row }) => { const { revenue, margin } = row.original; const pct = revenue > 0 ? Math.round((margin / revenue) * 100) : 0; const isLoss = margin < 0; return <span className={isLoss ? 'text-destructive' : ''}>{isLoss ? '—' : `${pct}%`}</span>; },
+      sortingFn: (a, b) => { const pctA = a.original.revenue > 0 ? (a.original.margin / a.original.revenue) : 0; const pctB = b.original.revenue > 0 ? (b.original.margin / b.original.revenue) : 0; return pctA - pctB; },
+    },
+    { accessorKey: 'qty', header: 'Шт.', cell: ({ getValue }) => <>{getValue<number>()}</> },
+  ], []);
 
   return (
     <div className="min-h-full bg-background">
-      <ActionBar criticalCount={criticalCount} totalAlertCount={totalAlertCount} />
+      <ActionBar criticalCount={criticalCount} totalAlertCount={totalAlerts} />
 
-      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-8">
 
-        {/* ═══ STATUS BAR ═══ */}
-        <div className={`
-          rounded-xl px-5 py-3.5 flex items-center gap-4 text-sm
-          ${isAllGood
-            ? 'bg-[#EFF1F3] text-foreground'
-            : 'bg-[#FFF3E0] text-foreground'
-          }
-        `}>
-          {isAllGood ? (
-            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-          )}
+        {/* ═══ PAGE TITLE ═══ */}
+        <h2 className="text-2xl font-bold text-foreground">Дашборд</h2>
 
-          <span className="font-medium">
-            {isAllGood ? 'Всё штатно' : `${totalAlerts} проблем${totalAlerts === 1 ? 'а' : totalAlerts < 5 ? 'ы' : ''}`}
-          </span>
+        {/* ═══ YESTERDAY SHIFT ═══ */}
+        {yesterdayShift && (
+          <div className="text-sm text-muted-foreground">
+            Вчера:{' '}
+            {yesterdayShift.closed ? (
+              <>
+                <span className="text-foreground font-medium">смена закрыта ✓</span>
+                {yesterdayShift.revenue != null && (<> · <span className="text-foreground">{fmtSom(yesterdayShift.revenue)} сом</span></>)}
+                {yesterdayShift.checks != null && (<> · <span className="text-foreground">{yesterdayShift.checks} чеков</span></>)}
+                {yesterdayShift.cashDifference != null && yesterdayShift.cashDifference !== 0 && (
+                  <span className={yesterdayShift.cashDifference > 0 ? ' text-success' : ' text-destructive'}>
+                    {' '}· расхождение {fmtSom(yesterdayShift.cashDifference)} сом
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-amber-600 font-medium">смена не закрыта ⚠</span>
+            )}
+          </div>
+        )}
 
-          {statusRevenue && (
-            <span className="text-muted-foreground">
-              {fmtSom(statusRevenue.value)} сом
-            </span>
-          )}
-
-          {openOrdersMetric && openOrdersMetric.value > 0 && (
-            <span className="text-muted-foreground">
-              · {openOrdersMetric.value} заказ{openOrdersMetric.value === 1 ? '' : openOrdersMetric.value < 5 ? 'а' : 'ов'}
-            </span>
-          )}
-
-          {shiftHoursMetric != null && shiftHoursMetric > 0 && (
-            <span className="text-muted-foreground">
-              · Смена {Math.round(shiftHoursMetric)}ч
-            </span>
-          )}
-
-          {!isAllGood && (
-            <span className="text-muted-foreground ml-auto text-xs">
-              {[...alertsByDomain.keys()].map(d => DOMAINS[d]?.label || d).join(', ')}
-            </span>
-          )}
-        </div>
-
-        {/* ═══ PERIOD SELECTOR ═══ */}
+        {/* ═══ KPI BLOCK ═══ */}
         <div>
-          <SegmentTabs options={PERIOD_OPTIONS} value={period} onChange={setPeriod} />
-          <p className="text-sm text-muted-foreground mt-2 ml-1">{periodRange}</p>
+          {/* Today row */}
+          <div>
+            <p className="text-sm font-medium text-foreground mb-3">Сегодня, {todayDate}</p>
+            {metrics.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4">
+                {metrics.map((metric) => (
+                  <div key={metric.label} className="px-2">
+                    <div className="flex flex-col min-w-0">
+                      <p className="text-sm text-muted-foreground mb-1 truncate">{metric.label}</p>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-2xl font-bold text-foreground truncate">
+                          {metric.format === 'percent' ? `${metric.todayValue}%` : fmtSom(metric.todayValue)}
+                        </span>
+                        {metric.format === 'som' && <span className="text-sm text-foreground shrink-0">с</span>}
+                      </div>
+                      {metric.todayTrend != null && (() => {
+                        const v = metric.todayTrend.value;
+                        const isCount = metric.format === 'count';
+                        const color = v > 0 ? 'text-success' : v < 0 ? 'text-destructive' : 'text-muted-foreground';
+                        const label = isCount ? `${v > 0 ? '+' : ''}${v} к ${lastWeekDay}` : `${v > 0 ? '+' : ''}${v}% к ${lastWeekDay}`;
+                        return <p className={`text-sm mt-0.5 ${color}`}>{label}</p>;
+                      })()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Spacer */}
+          <div className="my-5" />
+
+          {/* Period row */}
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <SegmentTabs options={PERIOD_OPTIONS} value={period} onChange={(v) => { setPeriod(v); setPeriodOffset(0); }} />
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPeriodOffset((o) => o - 1)} className="p-1 rounded hover:bg-muted transition-colors" title="Предыдущий">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 3L5 7l4 4"/></svg>
+                </button>
+                <span className="text-sm text-foreground font-medium tabular-nums select-none">{formatPeriodRange(period, periodOffset)}</span>
+                <button type="button" onClick={() => setPeriodOffset((o) => Math.min(0, o + 1))} disabled={periodOffset >= 0}
+                  className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-default" title="Следующий">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 3l4 4-4 4"/></svg>
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4">
+              {metrics.map((metric, i) => (
+                <div key={metric.label} className="px-2">
+                  <div className="flex flex-col min-w-0">
+                    <p className="text-sm text-muted-foreground mb-1 truncate">{metric.label}</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-bold text-foreground truncate">
+                        {metric.format === 'percent' ? `${metric.periodValue}%` : fmtSom(metric.periodValue)}
+                      </span>
+                      {metric.format === 'som' && <span className="text-sm text-muted-foreground shrink-0">с</span>}
+                    </div>
+                    {sparklineDailyData && sparklineDailyData[i] && (
+                      <div className="mt-1">
+                        <Sparkline data={sparklineDailyData[i]!} format={metric.format} dayLabels={sparklineDayLabels} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
+
+        {/* ═══ ALERTS — chip flow ═══ */}
+        {hasAlerts && urgencyGroups && (
+          <div>
+            {[...urgencyGroups.urgent, ...urgencyGroups.important, ...urgencyGroups.background]
+              .filter(a => !dismissedAlertIds.has(a.id))
+              .map((alert) => (
+                <AlertCard key={alert.id} type={alert.type} message={alert.message}
+                  actionLabel={alert.actionLabel} actionHref={alert.actionHref}
+                  onDismiss={() => setDismissedAlertIds((prev) => new Set(prev).add(alert.id))} variant="chip" />
+              ))}
+          </div>
+        )}
 
         {/* ═══ LOADING ═══ */}
         {isPending && (
-          <div className="bg-[#EFF1F3] rounded-xl p-5 opacity-60">
+          <div className="opacity-60">
             <p className="text-sm text-muted-foreground mb-4">Загрузка данных...</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-border/30">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className={i === 0 ? 'pr-4' : i === 5 ? 'pl-4' : 'px-4'}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="px-2">
                   <div className="h-4 bg-muted rounded w-20 mb-2" />
                   <div className="h-7 bg-muted rounded w-24 mb-1" />
                   <div className="h-3 bg-muted rounded w-12" />
@@ -218,87 +306,22 @@ export function Dashboard() {
           </div>
         )}
 
-        {/* ═══ METRICS + YESTERDAY + ALERTS (один контейнер) ═══ */}
-        {metrics.length > 0 && (
-          <div className="bg-[#EFF1F3] rounded-xl p-4 sm:p-5 transition-opacity duration-300">
-            {/* KPI Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-border/30">
-              {metrics.map((metric, i) => (
-                <div key={metric.label} className={i === 0 ? 'pr-3 sm:pr-4' : i === metrics.length - 1 ? 'pl-3 sm:pl-4' : 'px-3 sm:px-4'}>
-                  <MetricCard
-                    label={metric.label}
-                    value={metric.value}
-                    format={metric.format}
-                    trend={metric.trend}
-                    tooltip={metric.tooltip}
-                    icon={metricIcons[i]}
-                    sparklineData={i === 0 ? data?.dailyRevenues : undefined}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Yesterday bar */}
-            {hasYesterday && (
-              <div className="mt-3 pt-3 border-t border-border/30 text-sm text-muted-foreground">
-                Вчера: <span className="font-medium text-foreground">{fmtSom(yesterday.revenue!)} сом</span>
-                {yesterday.checks != null && (
-                  <> · <span className="text-foreground">{yesterday.checks} чеков</span></>
-                )}
-              </div>
-            )}
-
-            {/* Alerts — grouped by DOMAIN */}
-            {hasAlerts && (
-              <div className={hasYesterday ? 'mt-3 pt-3 border-t border-border/30' : 'mt-3'}>
-                {[...alertsByDomain.entries()].map(([domain, domainAlerts]) => {
-                  const domainCfg = DOMAINS[domain] || { label: domain, icon: AlertTriangle };
-                  return (
-                    <div key={domain} className="mb-2 last:mb-0">
-                      <div className="flex items-center gap-1.5 mb-1 px-4">
-                        <domainCfg.icon className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                          {domainCfg.label}
-                        </span>
-                      </div>
-                      {domainAlerts.map((alert) => (
-                        <AlertCard
-                          key={alert.id}
-                          type={alert.type}
-                          message={alert.message}
-                          actionLabel={alert.actionLabel}
-                          actionHref={alert.actionHref}
-                          onDismiss={() => setDismissedAlertIds((prev) => new Set(prev).add(alert.id))}
-                          iconRaw={alertIconSrc(alert.id)}
-                          grouped
-                        />
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ═══ CHRONOLOGY ═══ */}
-        <ChronologyFeed
-          events={chronology}
-          title="События"
-        />
+        <ChronologyFeed events={chronology} title="События" />
 
-        {/* ═══ MIGRATION CARDS ═══ */}
-        {hasMigration && (
-          <div className="space-y-2">
-            {migrationCards.map((card) => (
-              <MigrationCard
-                key={card.id}
-                card={card}
-                onDismiss={(id) => {
-                  setDismissedMigrationIds((prev) => new Set(prev).add(id));
-                }}
-              />
-            ))}
+        {/* ═══ PRODUCTS TABLE ═══ */}
+        {data?.topDishes && data.topDishes.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-foreground mb-3">
+              Товары за месяц · {data.topDishes.length} позиций
+            </h3>
+            <DataTable
+              data={data.topDishes}
+              columns={dishColumns}
+              dense
+              className="max-w-4xl"
+              getRowClassName={(row) => row.original.margin < 0 ? 'bg-destructive/5' : ''}
+            />
           </div>
         )}
 

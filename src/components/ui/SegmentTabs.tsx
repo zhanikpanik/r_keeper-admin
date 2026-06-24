@@ -28,7 +28,7 @@ export function SegmentTabs<T extends string>({
             type="button"
             onClick={() => onChange(opt.value)}
             className={cn(
-              'px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-150',
+              'px-4 py-1 text-sm font-medium rounded-md transition-all duration-150',
               active
                 ? 'bg-white text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',

@@ -1,9 +1,13 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Printer, ChevronDown, Plus } from 'lucide-react';
+import { type ColumnDef } from '@tanstack/react-table';
+import { cn } from '@/lib/utils';
 import { DeleteButton } from '@/components/ui/DeleteButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { Modal } from '@/components/ui/Modal';
+import { SegmentTabs } from '@/components/ui/SegmentTabs';
+import { DataTable } from '@/components/ui/DataTable';
 import { toast } from 'sonner';
 import {
  useShiftTransactions,
@@ -12,7 +16,6 @@ import {
  useUpdateTransaction,
  type TransactionType,
  type CreatableTransactionType,
- type PaymentMethod,
 } from '@/hooks/useCashTransactions';
 import { DecimalSuffixInput } from '@/components/DecimalSuffixInput';
 import { useTransactionCategories } from '@/hooks/useTransactionCategories';
@@ -70,15 +73,15 @@ function humanizeNote(note: string | null | undefined): string {
 }
 
 const TYPE_COLOR: Record<TransactionType, string> = {
- income: 'text-green-600',
- expense: 'text-red-600',
+ income: 'text-success',
+ expense: 'text-destructive',
  collection: 'text-muted-foreground',
  other: 'text-muted-foreground',
 };
 
 const TYPE_AMOUNT_COLOR: Record<TransactionType, string> = {
- income: 'text-green-600',
- expense: 'text-red-600',
+ income: 'text-success',
+ expense: 'text-destructive',
  collection: '',
  other: '',
 };
@@ -169,7 +172,7 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
       />
       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">сом</span>
      </div>
-     {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+     {error && <p className="text-sm text-destructive mt-1">{error}</p>}
     </div>
 
     {/* Category (income/expense only) */}
@@ -227,9 +230,9 @@ function AddTransactionModal({ shifts, defaultDatetime, onClose }: AddModalProps
       const sid = matchShiftIdForTimestamp(new Date(datetime).toISOString(), shifts);
       const s = shifts.find(x => x.id === sid);
       return sid ? (
-       <p className="text-sm text-green-700 mt-1 font-medium">→ Смена ({s?.openTime})</p>
+       <p className="text-sm text-success mt-1 font-medium">→ Смена ({s?.openTime})</p>
       ) : (
-       <p className="text-sm text-amber-600 mt-1">Не попадает ни в одну смену</p>
+       <p className="text-sm text-warning mt-1">Не попадает ни в одну смену</p>
       );
      })()}
     </div>
@@ -439,71 +442,119 @@ function ShiftDetail({ shift, onAddTransaction }: { shift: CashShift; onAddTrans
      </p>
     )}
 
-    {showTxTable && (
-     <div>
-      <div className="flex items-center py-1.5 text-sm text-muted-foreground">
-       <div className="flex-1 min-w-0 max-w-[260px]">Тип</div>
-       <div className="w-[150px] shrink-0">Дата/время</div>
-       <div className="w-[120px] shrink-0 text-right">Сумма</div>
-       <div className="w-[40px] shrink-0" />
-       <div className="w-[40px] shrink-0" />
-      </div>
-      <div>
-       <div className="group flex items-center py-1.5 text-sm hover:bg-black/[0.03] transition-colors">
-        <div className="flex-1 min-w-0 truncate max-w-[260px] font-medium">Открытие{shift.openingNote?.trim() ? ` · ${humanizeNote(shift.openingNote)}` : ''}</div>
-        <div className="w-[150px] shrink-0">{formatDatetime(shift.openIso)}</div>
-        <div className="w-[120px] shrink-0 text-right tabular-nums text-foreground">
-         {formatCurrency(shift.startBalance)}
-        </div>
-        <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-         <EditButton onClick={() => setBoundaryEdit('open')} />
-        </div>
-        <div className="w-[40px] shrink-0" />
-       </div>
+    {showTxTable && (() => {
+     type ShiftRow = {
+      id: string;
+      kind: 'opening' | 'transaction' | 'closing';
+      typeLabel: string;
+      typeColor: string;
+      typeSub: string;
+      datetime: string;
+      amount: number | null;
+      amountColor: string;
+      isBold: boolean;
+      tx?: typeof txsChrono[number];
+      boundaryMode?: 'open' | 'close';
+     };
 
-       {txsChrono.map((tx) => (
-        <div key={tx.id} className="group flex items-center py-1.5 text-sm hover:bg-black/[0.03] transition-colors">
-         <div className="flex-1 min-w-0 truncate max-w-[260px]">
-          <span>{TYPE_LABELS[tx.type]}</span>
-          {tx.category_id && catMap[tx.category_id] && (
-           <span className="text-muted-foreground"> · {catMap[tx.category_id]}</span>
-          )}
-          {tx.note?.trim() && (
-           <span className="text-muted-foreground"> · {humanizeNote(tx.note)}</span>
-          )}
-         </div>
-         <div className="w-[150px] shrink-0">{formatDatetime(tx.transaction_at)}</div>
-         <div className={`w-[120px] shrink-0 text-right tabular-nums ${TYPE_AMOUNT_COLOR[tx.type]}`}>
-          {formatCurrency(tx.amount)}
-         </div>
-         <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-          <EditButton onClick={() => setEditTx(tx)} />
-         </div>
-         <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-          <DeleteButton onClick={async () => {
-           try { await deleteTx.mutateAsync(tx.id); }
-           catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Не удалось удалить'); }
-          }} />
-         </div>
-        </div>
-       ))}
+     const rows: ShiftRow[] = [
+      {
+       id: 'opening',
+       kind: 'opening',
+       typeLabel: 'Открытие',
+       typeColor: 'text-foreground',
+       typeSub: shift.openingNote?.trim() ? humanizeNote(shift.openingNote) : '',
+       datetime: formatDatetime(shift.openIso),
+       amount: shift.startBalance,
+       amountColor: 'text-foreground',
+       isBold: true,
+       boundaryMode: 'open',
+      },
+      ...txsChrono.map(tx => ({
+       id: tx.id,
+       kind: 'transaction' as const,
+       typeLabel: TYPE_LABELS[tx.type],
+       typeColor: TYPE_COLOR[tx.type],
+       typeSub: [tx.category_id && catMap[tx.category_id], tx.note?.trim() && humanizeNote(tx.note)].filter(Boolean).join(' · '),
+       datetime: formatDatetime(tx.transaction_at),
+       amount: tx.amount,
+       amountColor: TYPE_AMOUNT_COLOR[tx.type],
+       isBold: false,
+       tx,
+      })),
+      ...(shift.closeIso ? [{
+       id: 'closing',
+       kind: 'closing' as const,
+       typeLabel: 'Закрытие',
+       typeColor: 'text-foreground',
+       typeSub: shift.closingNote?.trim() ? humanizeNote(shift.closingNote) : '',
+       datetime: formatDatetime(shift.closeIso),
+       amount: shift.closingCashCount,
+       amountColor: 'text-foreground',
+       isBold: true,
+       boundaryMode: 'close' as const,
+      }] : []),
+     ];
 
-       {shift.closeIso && (
-        <div className="group flex items-center py-1.5 text-sm hover:bg-black/[0.03] transition-colors">
-         <div className="flex-1 min-w-0 truncate max-w-[260px] font-medium">Закрытие{shift.closingNote?.trim() ? ` · ${humanizeNote(shift.closingNote)}` : ''}</div>
-         <div className="w-[150px] shrink-0">{formatDatetime(shift.closeIso)}</div>
-         <div className="w-[120px] shrink-0 text-right tabular-nums text-foreground">
-          {shift.closingCashCount != null ? formatCurrency(shift.closingCashCount) : '—'}
-         </div>
-         <div className="w-[40px] shrink-0 flex justify-center opacity-40 group-hover:opacity-100 transition-opacity">
-          <EditButton onClick={() => setBoundaryEdit('close')} />
-         </div>
-         <div className="w-[40px] shrink-0" />
+     const shiftColumns: ColumnDef<ShiftRow, any>[] = [
+      {
+       id: 'type',
+       header: 'Тип',
+       cell: ({ row }) => (
+        <div className="min-w-0 truncate">
+         <span className={cn(row.original.isBold && 'font-medium', row.original.typeColor)}>{row.original.typeLabel}</span>
+         {row.original.typeSub && <span> · {row.original.typeSub}</span>}
         </div>
-       )}
-      </div>
-     </div>
-    )}
+       ),
+      },
+      {
+       id: 'datetime',
+       header: 'Дата/время',
+       cell: ({ getValue, row }) => <span className={row.original.isBold ? 'font-medium' : ''}>{getValue<string>()}</span>,
+       accessorKey: 'datetime',
+       meta: { align: 'text-left' },
+      },
+      {
+       id: 'amount',
+       header: 'Сумма',
+       cell: ({ row }) => {
+        const r = row.original;
+        const label = r.amount != null ? formatCurrency(r.amount) : '—';
+        return <span className={`${r.amountColor}`}>{label}</span>;
+       },
+      },
+      {
+       id: 'edit',
+       header: '',
+       cell: ({ row }) => {
+        const r = row.original;
+        if (r.kind === 'transaction') return <EditButton onClick={() => setEditTx(r.tx!)} />;
+        if (r.boundaryMode) return <EditButton onClick={() => setBoundaryEdit(r.boundaryMode!)} />;
+        return null;
+       },
+      },
+      {
+       id: 'delete',
+       header: '',
+       cell: ({ row }) => {
+        const r = row.original;
+        if (r.kind !== 'transaction') return null;
+        return <DeleteButton onClick={async () => {
+         try { await deleteTx.mutateAsync(r.tx!.id); }
+         catch (e: unknown) { toast.error(e instanceof Error ? e.message : 'Не удалось удалить'); }
+        }} />;
+       },
+      },
+     ];
+
+     return (
+      <DataTable
+       data={rows}
+       columns={shiftColumns}
+       dense
+      />
+     );
+    })()}
    </div>
 
    <button
@@ -514,11 +565,11 @@ function ShiftDetail({ shift, onAddTransaction }: { shift: CashShift; onAddTrans
    </button>
 
    <div className="flex items-center gap-3 py-1 text-sm">
-    <span className="tabular-nums text-green-600">+{formatCurrency(totalIncome)} приход</span>
-    <span className="tabular-nums text-red-600">−{formatCurrency(totalExpense)} расход</span>
-    {totalCollection > 0 && <span className="tabular-nums">−{formatCurrency(totalCollection)} инкассация</span>}
-    <span className="text-muted-foreground">→</span>
-    <span className="tabular-nums font-medium">{formatCurrency(shift.expectedCash)} в кассе</span>
+    <span className="text-success">+{formatCurrency(totalIncome)} приход</span>
+    <span className="text-destructive">−{formatCurrency(totalExpense)} расход</span>
+    {totalCollection > 0 && <span>−{formatCurrency(totalCollection)} инкассация</span>}
+    <span>→</span>
+    <span className="font-medium">{formatCurrency(shift.expectedCash)} в кассе</span>
    </div>
   </div>
  );
@@ -597,7 +648,7 @@ export function EditTransactionModal({
        placeholder="0" value={amount} onChange={(e) => { setAmount(e.target.value); setError(''); }} autoFocus />
       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">сом</span>
      </div>
-     {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+     {error && <p className="text-sm text-destructive mt-1">{error}</p>}
     </div>
 
     {type !== 'collection' && categories.length > 0 && (
@@ -653,8 +704,20 @@ export function EditTransactionModal({
 
 export function CashShifts() {
  const [searchParams, setSearchParams] = useSearchParams();
- const { data: shifts = [], isLoading, isError, error } = useShifts();
+ const { data: rawShifts = [], isLoading, isError, error } = useShifts();
  const [expandedId, setExpandedId] = useState<string | null>(null);
+ const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'all'>('all');
+
+ const shifts = useMemo(() => {
+   if (period === 'all') return rawShifts;
+   const now = new Date();
+   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+   let cutoff: Date;
+   if (period === 'today') cutoff = today;
+   else if (period === 'week') { cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 7); }
+   else { cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - 30); }
+   return rawShifts.filter(s => new Date(s.openTime) >= cutoff);
+ }, [rawShifts, period]);
  const [showModal, setShowModal] = useState(false);
  const [modalDefaultDt, setModalDefaultDt] = useState<string | undefined>(undefined);
 
@@ -675,6 +738,64 @@ export function CashShifts() {
   setModalDefaultDt(dt);
   setShowModal(true);
  }
+
+ const expandedRows = useMemo(() => {
+  if (!expandedId) return {} as Record<string, boolean>;
+  return { [expandedId]: true };
+ }, [expandedId]);
+
+ const shiftColumns = useMemo((): ColumnDef<CashShift, any>[] => [
+  {
+   id: 'shift',
+   header: 'Смена',
+   cell: ({ row }) => (
+    <div className="flex items-center gap-2 min-w-0">
+     <span className="truncate text-sm">{row.original.openTime}</span>
+     <span className="text-muted-foreground opacity-30">—</span>
+     <span className="truncate text-sm">
+      {row.original.closeTime || 'Не закрыта'}
+     </span>
+    </div>
+   ),
+  },
+  {
+   id: 'startBalance',
+   header: 'Начало',
+   cell: ({ row }) => (
+    <span className="text-sm">{formatCurrency(row.original.startBalance)}</span>
+   ),
+  },
+  {
+   id: 'closingCash',
+   header: 'В кассе',
+   cell: ({ row }) => {
+    const s = row.original;
+    if (!s.closeIso) return null;
+    return <span className="text-sm">{s.closingCashCount != null ? formatCurrency(s.closingCashCount) : '—'}</span>;
+   },
+  },
+  {
+   id: 'difference',
+   header: 'Разница',
+   cell: ({ row }) => {
+    const s = row.original;
+    if (s.difference == null) return <span className="text-muted-foreground text-sm">{s.closeIso ? '—' : ''}</span>;
+    const prefix = s.difference > 0 ? '+' : '';
+    return (
+     <span className={`text-sm font-medium ${s.difference !== 0 ? (s.difference > 0 ? 'text-success' : 'text-destructive') : 'text-muted-foreground'}`}>
+      {prefix}{formatCurrency(s.difference)}
+     </span>
+    );
+   },
+  },
+  {
+   id: 'collection',
+   header: 'Инкассация',
+   cell: ({ row }) => (
+    <span className="text-sm">{formatCurrency(row.original.collection)}</span>
+   ),
+  },
+ ], []);
 
  return (
   <div className="p-8">
@@ -706,103 +827,39 @@ export function CashShifts() {
     </div>
    </div>
 
-   <div className="max-w-4xl">
-   <table className="w-full table-fixed border-separate border-spacing-0">
-    <thead>
-     <tr className="text-sm font-medium text-foreground">
-      <th scope="col" className="text-left py-1.5 px-3 w-[280px]">Смена</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Начало</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">В кассе</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Разница</th>
-      <th scope="col" className="text-right py-1.5 px-3 w-[120px]">Инкассация</th>
-      <th scope="col" className="py-1.5 w-[40px]" />
-     </tr>
-    </thead>
-    <tbody>
-     {isLoading && (
-      <tr><td colSpan={6} className="px-3 py-8 text-sm">Загрузка...</td></tr>
-     )}
-     {!isLoading && shifts.length === 0 && (
-      <tr><td colSpan={6} className="px-3 py-12 text-center text-sm">Нет кассовых смен</td></tr>
-     )}
-     {shifts.map((shift, idx) => {
-      const isExpanded = expandedId === shift.id;
-      let rowClass = 'cursor-pointer ';
-      if (isExpanded) {
-       rowClass += 'bg-black/[0.03] ';
-      } else if (!shift.closeTime) {
-       rowClass += 'bg-[#FDF6E3] hover:bg-[#F9EED4] ';
-      } else if (shift.difference != null && shift.difference !== 0) {
-       rowClass += 'bg-[#FCE8E8] hover:bg-[#FAD5D5] ';
-      } else {
-       rowClass += (idx % 2 === 1 ? 'bg-muted/10 ' : '') + 'hover:bg-black/[0.03] ';
-      }
+   <SegmentTabs
+     options={[
+       { value: 'today' as const, label: 'Сегодня' },
+       { value: 'week' as const, label: 'Неделя' },
+       { value: 'month' as const, label: 'Месяц' },
+       { value: 'all' as const, label: 'Всё' },
+     ]}
+     value={period}
+     onChange={setPeriod}
+     className="mb-4"
+   />
 
-      return (
-       <Fragment key={shift.id}>
-       <tr
-        className={rowClass}
-        onClick={() => toggleExpand(shift.id)}
-        onKeyDown={(e) => {
-         if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          toggleExpand(shift.id);
-         }
-        }}
-        tabIndex={0}
-        role="button"
-       >
-        <td className="py-2 px-3 min-w-0">
-         <div className="flex items-center gap-2">
-          <span className="truncate text-sm">{shift.openTime}</span>
-          <span className="text-muted-foreground opacity-30">—</span>
-          <span className="truncate text-sm">
-           {shift.closeTime || 'Не закрыта'}
-          </span>
-         </div>
-        </td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm">
-         {formatCurrency(shift.startBalance)}
-        </td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm text-foreground">
-         {shift.closeIso
-          ? shift.closingCashCount != null
-           ? formatCurrency(shift.closingCashCount)
-           : '—'
-          : ''}
-        </td>
-        <td
-         className={`py-2 px-3 text-right tabular-nums text-sm ${
-          shift.difference != null && shift.difference !== 0
-           ? shift.difference > 0
-            ? 'font-medium text-green-600'
-            : 'font-medium text-red-600'
-           : 'text-muted-foreground'
-         }`}
-        >
-         {shift.difference != null
-          ? `${shift.difference > 0 ? '+' : ''}${formatCurrency(shift.difference)}`
-          : shift.closeIso
-           ? '—'
-           : ''}
-        </td>
-        <td className="py-2 px-3 text-right tabular-nums text-sm">
-         {formatCurrency(shift.collection)}
-        </td>
-        <td />
-       </tr>
-       {isExpanded && (
-        <tr key={`${shift.id}-detail`} className="bg-black/[0.03]">
-         <td colSpan={6} className="py-1.5 pl-8 pr-3">
-          <ShiftDetail shift={shift} onAddTransaction={openModal} />
-         </td>
-        </tr>
-       )}
-       </Fragment>
-      );
-     })}
-    </tbody>
-   </table>
+   <div className="max-w-4xl">
+    <DataTable
+      data={shifts}
+      columns={shiftColumns}
+      dense
+      isLoading={isLoading}
+      error={isError ? error : null}
+      emptyMessage="Нет кассовых смен"
+      expandedRows={expandedRows}
+      onExpandedChange={toggleExpand}
+      renderExpandedRow={(row) => (
+        <ShiftDetail shift={row.original} onAddTransaction={openModal} />
+      )}
+      getRowClassName={(row) => {
+        const s = row.original;
+        if (expandedId === s.id) return 'bg-black/[0.03]';
+        if (!s.closeTime) return 'bg-[#FDF6E3] hover:bg-[#F9EED4]';
+        if (s.difference != null && s.difference !== 0) return 'bg-[#FCE8E8] hover:bg-[#FAD5D5]';
+        return row.index % 2 === 1 ? 'bg-muted/10' : '';
+      }}
+    />
    </div>
   </div>
  );

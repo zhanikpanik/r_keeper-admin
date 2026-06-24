@@ -204,11 +204,11 @@ export function Staff() {
    <table className="table-fixed border-separate border-spacing-0 w-full">
     <thead className="sticky top-0 z-10 bg-background">
      <tr className="text-sm font-medium text-foreground">
-      <th scope="col" className="text-left py-1.5 px-3 w-[180px]">Имя</th>
-      <th scope="col" className="text-left py-1.5 px-3 w-[120px]">Должность</th>
-      <th scope="col" className="text-left py-1.5 px-3 w-[180px]">Эл. почта</th>
-      <th scope="col" className="text-center py-1.5 px-3 w-[96px]">PIN</th>
-      <th scope="col" className="text-center py-1.5 px-3 w-[140px]">Последний вход</th>
+      <th scope="col" className="text-left py-1.5 w-[180px]">Имя</th>
+      <th scope="col" className="text-left py-1.5 w-[120px]">Должность</th>
+      <th scope="col" className="text-left py-1.5 w-[180px]">Эл. почта</th>
+      <th scope="col" className="text-center py-1.5 w-[96px]">PIN</th>
+      <th scope="col" className="text-center py-1.5 w-[140px]">Последний вход</th>
       <th scope="col" className="py-1.5 w-[56px]" />
       <th scope="col" className="py-1.5 w-[56px] pr-3" />
      </tr>
@@ -223,46 +223,46 @@ export function Staff() {
      {!isPending && !isError && filtered.map((member) => (
       <tr
        key={member.id}
-       className={`group hover:bg-black/[0.03] transition-colors ${!member.is_active ? 'opacity-50' : ''}`}
+       className={`group row-hover ${!member.is_active ? 'opacity-50' : ''}`}
       >
        {editingId === member.id ? (
         <>
-         <td className="py-1.5 px-3">
+         <td className="py-1.5">
           <input className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.name || ''} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} autoFocus onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()} />
          </td>
-         <td className="py-1.5 px-3">
+         <td className="py-1.5">
           <select className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.role || 'cashier'} onChange={(e) => setEditData((d) => ({ ...d, role: e.target.value as StaffMember['role'] }))}>
            {ROLES.map((r) => (<option key={r.value} value={r.value}>{r.label}</option>))}
           </select>
          </td>
-         <td className="py-1.5 px-3">
+         <td className="py-1.5">
           <input className="w-full px-2 py-1 border rounded text-sm bg-background" value={editData.email || ''} onChange={(e) => setEditData((d) => ({ ...d, email: e.target.value }))} placeholder="Эл. почта" />
          </td>
-         <td className="py-1.5 px-3 text-center">
+         <td className="py-1.5 text-center">
           <input className="w-full max-w-[5.5rem] px-2 py-1 border rounded text-sm bg-background font-mono text-center" value={editData.pin || ''} onChange={(e) => setEditData((d) => ({ ...d, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))} maxLength={4} />
          </td>
-         <td className="py-1.5 px-3" />
-         <td className="py-1.5 px-3">
+         <td className="py-1.5" />
+         <td className="py-1.5">
           <div className="flex justify-end gap-1">
            <button type="button" onClick={handleSaveEdit} className="text-sm text-green-600 font-medium px-2 py-1">✓</button>
            <button type="button" onClick={() => { setEditingId(null); setEditData({}); }} className="text-sm px-2 py-1">✕</button>
           </div>
          </td>
-         <td className="py-1.5 pr-4" />
+         <td className="py-1.5" />
         </>
        ) : (
         <>
-         <td className="py-1.5 px-3 text-sm truncate">{member.name}</td>
-         <td className="py-1.5 px-3 text-sm whitespace-nowrap">{ROLE_LABELS[member.role] ?? member.role}</td>
-         <td className="py-1.5 px-3 text-sm truncate">{member.email || '—'}</td>
-         <td className="py-1.5 px-3 text-center font-mono text-sm">
+         <td className="py-1.5 text-sm truncate">{member.name}</td>
+         <td className="py-1.5 text-sm whitespace-nowrap">{ROLE_LABELS[member.role] ?? member.role}</td>
+         <td className="py-1.5 text-sm truncate">{member.email || '—'}</td>
+         <td className="py-1.5 text-center font-mono text-sm">
           <span className="px-2 py-0.5 rounded select-none cursor-default" style={{ filter: 'blur(7px)', transition: '0.1s' }} onMouseEnter={(e) => { e.currentTarget.style.filter = 'blur(0)'; }} onMouseLeave={(e) => { e.currentTarget.style.filter = 'blur(7px)'; }}>{member.pin}</span>
          </td>
-         <td className="py-1.5 px-3 text-center text-sm tabular-nums whitespace-nowrap">{formatDate(member.last_session_at)}</td>
-         <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
+         <td className="py-1.5 text-center text-sm tabular-nums whitespace-nowrap">{formatDate(member.last_session_at)}</td>
+         <td className="py-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
           <EditButton onClick={() => startEdit(member)} />
          </td>
-         <td className="py-1.5 pr-4 opacity-40 group-hover:opacity-100 transition-opacity">
+         <td className="py-1.5 opacity-40 group-hover:opacity-100 transition-opacity">
           <DeleteButton variant="row" onClick={() => handleDelete(member.id)} />
          </td>
         </>

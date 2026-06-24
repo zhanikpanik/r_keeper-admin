@@ -74,7 +74,7 @@ export function AlertGroupCard({ group, onDismissAlert }: Props) {
               {alert.actionLabel && alert.actionHref && (
                 <Link
                   to={alert.actionHref}
-                  className="shrink-0 text-xs font-medium text-primary hover:underline"
+                  className="shrink-0 text-sm font-medium text-primary hover:underline"
                 >
                   {alert.actionLabel}
                 </Link>

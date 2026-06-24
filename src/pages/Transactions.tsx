@@ -1,10 +1,14 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { DeleteButton } from '@/components/ui/DeleteButton';
 import { EditButton } from '@/components/ui/EditButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
+import { SearchInput } from '@/components/ui/SearchInput';
+import { SegmentTabs } from '@/components/ui/SegmentTabs';
+import { DataTable } from '@/components/ui/DataTable';
 import { toast } from 'sonner';
 import { EditTransactionModal } from '@/pages/CashShifts';
 import {
@@ -14,6 +18,7 @@ import {
  type TransactionType,
  type CreatableTransactionType,
  type PaymentMethod,
+ type CashTransaction,
 } from '@/hooks/useCashTransactions';
 import { useTransactionCategories } from '@/hooks/useTransactionCategories';
 import { useShifts, type CashShift } from '@/hooks/useShiftsData';
@@ -31,13 +36,6 @@ const TYPE_COLOR: Record<TransactionType, string> = {
  expense: 'text-red-600',
  collection: 'text-muted-foreground',
  other: 'text-muted-foreground',
-};
-
-const TYPE_SIGN: Record<TransactionType, string> = {
- income: '+',
- expense: '−',
- collection: '',
- other: '',
 };
 
 const NOTE_LABELS: Record<string, string> = {
@@ -71,15 +69,6 @@ function nowLocalISO() {
 function formatDateLabel(isoDate: string) {
  const d = new Date(isoDate);
  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-}
-
-function toDateKey(iso: string) {
- return iso.slice(0, 10);
-}
-
-function formatTime(iso: string) {
- const d = new Date(iso);
- return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -139,8 +128,8 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
          type === t
           ? 'bg-white text-foreground shadow-sm'
           : 'text-muted-foreground hover:text-foreground'
-        }`}
-        
+        }`
+       }
        >
         {TYPE_LABELS[t]}
        </button>
@@ -278,7 +267,23 @@ function AddTransactionModal({ shifts, onClose }: ModalProps) {
 
 export function Transactions() {
  const [showModal, setShowModal] = useState(false);
- const { data: txs = [], isLoading, isError, error } = useTransactions();
+ const { data: rawTxs = [], isLoading, isError, error } = useTransactions();
+ const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>('all');
+ const [search, setSearch] = useState('');
+
+ const txs = useMemo(() => {
+   let filtered = rawTxs;
+   if (typeFilter !== 'all') filtered = filtered.filter(tx => tx.type === typeFilter);
+   if (search.trim()) {
+     const q = search.trim().toLowerCase();
+     filtered = filtered.filter(tx =>
+       (tx.note && tx.note.toLowerCase().includes(q)) ||
+       humanizeNote(tx.note).toLowerCase().includes(q) ||
+       TYPE_LABELS[tx.type].toLowerCase().includes(q)
+     );
+   }
+   return filtered;
+ }, [rawTxs, typeFilter, search]);
  const { data: shifts = [] } = useShifts();
  const { data: allCats = [] } = useTransactionCategories();
  const catMap = Object.fromEntries(allCats.map((c) => [c.id, c.name]));
@@ -290,17 +295,77 @@ export function Transactions() {
   [shifts],
  );
 
- // Group by date key (YYYY-MM-DD), preserving order (already sorted desc by transaction_at)
- const groups: { dateKey: string; dateLabel: string; items: typeof txs }[] = [];
- for (const tx of txs) {
-  const dk = toDateKey(tx.transaction_at);
-  const last = groups[groups.length - 1];
-  if (last && last.dateKey === dk) {
-   last.items.push(tx);
-  } else {
-   groups.push({ dateKey: dk, dateLabel: formatDateLabel(tx.transaction_at), items: [tx] });
-  }
- }
+ const columns = useMemo<ColumnDef<CashTransaction, any>[]>(() => [
+  {
+   accessorKey: 'transaction_at',
+   header: 'Дата',
+   cell: ({ getValue }) => (
+    <span className="text-sm text-foreground">{formatDateLabel(getValue<string>())}</span>
+   ),
+  },
+  {
+   id: 'shift',
+   header: 'Смена',
+   cell: ({ row }) => {
+    const tx = row.original;
+    const shift = tx.shift_id ? shiftById.get(tx.shift_id.toLowerCase()) : undefined;
+    if (!tx.shift_id) return <span>—</span>;
+    if (!shift) {
+     return (
+      <Link to={`/cash-shifts?shift=${tx.shift_id}`} className="text-primary hover:text-primary/70 text-sm truncate block" title="Смена">
+       Открыть смену
+      </Link>
+     );
+    }
+    return (
+     <Link to={`/cash-shifts?shift=${tx.shift_id}`} className="text-primary hover:text-primary/70 font-medium truncate block" title={`${shift.openTime} — ${shift.closeTime ?? '…'}`}>
+      {shift.openTime}
+     </Link>
+    );
+   },
+  },
+  {
+   id: 'type',
+   header: 'Тип',
+   cell: ({ row }) => {
+    const tx = row.original;
+    return (
+     <div>
+      <span className="text-sm">{TYPE_LABELS[tx.type]}</span>
+      {tx.category_id && catMap[tx.category_id] && (
+       <span className="block text-sm truncate">{catMap[tx.category_id]}</span>
+      )}
+     </div>
+    );
+   },
+  },
+  {
+   accessorKey: 'amount',
+   header: 'Сумма',
+   cell: ({ row }) => {
+    const tx = row.original;
+    return <span className={`text-sm ${TYPE_COLOR[tx.type]}`}>{formatCurrency(tx.amount)}</span>;
+   },
+  },
+  {
+   id: 'note',
+   header: 'Комментарий',
+   cell: ({ row }) => {
+    const note = row.original.note;
+    return <div className="truncate">{note?.trim() ? humanizeNote(note) : '—'}</div>;
+   },
+  },
+  {
+   id: 'edit',
+   header: '',
+   cell: ({ row }) => <EditButton onClick={() => setEditTx(row.original)} />,
+  },
+  {
+   id: 'delete',
+   header: '',
+   cell: ({ row }) => <DeleteButton onClick={() => deleteTx.mutate(row.original.id)} />,
+  },
+ ], [shiftById, catMap, deleteTx]);
 
  return (
   <div className="p-8">
@@ -318,109 +383,37 @@ export function Transactions() {
     </button>
    </div>
 
-   {isError && (
-    <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-     {error instanceof Error ? error.message : 'Не удалось загрузить транзакции'}
-    </div>
-   )}
+   {/* Filters */}
+   <div className="flex items-center gap-2 mb-4 flex-wrap">
+    <SearchInput value={search} onChange={setSearch} placeholder="Поиск по комментарию…" className="w-56" />
+    <SegmentTabs
+      options={[
+        { value: 'all' as const, label: 'Все' },
+        { value: 'income' as const, label: 'Приход' },
+        { value: 'expense' as const, label: 'Расход' },
+        { value: 'collection' as const, label: 'Инкассация' },
+      ]}
+      value={typeFilter}
+      onChange={setTypeFilter}
+    />
+   </div>
 
-   {isLoading && <p className="text-sm text-muted-foreground">Загрузка...</p>}
-   {!isLoading && !isError && txs.length === 0 && (
-    <div className="max-w-4xl">
-    <table className="table-fixed border-separate border-spacing-0 w-full">
-     <tbody>
-      <tr><td>
-       <EmptyState
-        title="Транзакций пока нет"
-        hint="Добавьте первую транзакцию — приход, расход или инкассацию"
-        action={{ label: 'Добавить транзакцию', onClick: () => setShowModal(true) }}
-       />
-      </td></tr>
-     </tbody>
-    </table>
-    </div>
-   )}
-
-   {groups.length > 0 && (
-    <div className="max-w-4xl">
-    <table className="table-fixed border-separate border-spacing-0 w-full">
-     <thead className="sticky top-0 z-10 bg-background">
-      <tr className="text-sm font-medium text-foreground">
-       <th scope="col" className="text-left font-medium py-1.5 px-3 w-[160px]">Дата</th>
-       <th scope="col" className="text-left font-medium py-1.5 px-3 w-[140px]">Смена</th>
-       <th scope="col" className="text-left font-medium py-1.5 px-3 w-[140px]">Тип</th>
-       <th scope="col" className="text-right font-medium py-1.5 px-3 w-[130px]">Сумма</th>
-       <th scope="col" className="text-left font-medium py-1.5 px-3">Комментарий</th>
-       <th scope="col" className="py-1.5 w-[56px]" />
-       <th scope="col" className="py-1.5 w-[56px] pr-3" />
-      </tr>
-     </thead>
-     <tbody>
-      {groups.flatMap(({ dateLabel, items }) =>
-       items.map((tx, idx) => {
-        const shift = tx.shift_id ? shiftById.get(tx.shift_id.toLowerCase()) : undefined;
-        return (
-        <tr
-         key={tx.id}
-         className="group hover:bg-black/[0.03] transition-colors"
-        >
-         <td className="py-1.5 px-3 text-sm">
-          {idx === 0 ? (
-           <span className="text-sm text-foreground">{dateLabel}</span>
-          ) : null}
-         </td>
-         <td className="py-1.5 px-3 text-sm min-w-0">
-          {tx.shift_id ? (
-           shift ? (
-           <Link
-            to={`/cash-shifts?shift=${tx.shift_id}`}
-            className="text-primary hover:text-primary/70 font-medium truncate block"
-            title={`${shift.openTime} — ${shift.closeTime ?? '…'}`}
-           >
-            {shift.openTime}
-           </Link>
-           ) : (
-            <Link
-             to={`/cash-shifts?shift=${tx.shift_id}`}
-             className="text-primary hover:text-primary/70 text-sm truncate block"
-             title="Смена"
-            >
-             Открыть смену
-            </Link>
-           )
-          ) : (
-           <span>—</span>
-          )}
-         </td>
-         <td className="py-1.5 px-3">
-          <span className="text-sm">
-           {TYPE_LABELS[tx.type]}
-          </span>
-          {tx.category_id && catMap[tx.category_id] && (
-           <span className="block text-sm truncate">{catMap[tx.category_id]}</span>
-          )}
-         </td>
-         <td
-          className={`py-1.5 px-3 text-sm text-right tabular-nums whitespace-nowrap ${TYPE_COLOR[tx.type]}`}
-         >
-          {formatCurrency(tx.amount)}
-         </td>
-         <td className="py-1.5 px-3 text-sm">
-          <div className="truncate">{tx.note?.trim() ? humanizeNote(tx.note) : '—'}</div>
-         </td>
-         <td className="py-1.5 px-3 opacity-40 group-hover:opacity-100 transition-opacity">
-          <EditButton onClick={() => setEditTx(tx)} />
-         </td>
-         <td className="py-1.5 pr-4 opacity-40 group-hover:opacity-100 transition-opacity">
-          <DeleteButton onClick={() => deleteTx.mutate(tx.id)} />
-         </td>
-        </tr>
-       );
-       })
-      )}
-     </tbody>
-     </table>
-    </div>
+   {txs.length === 0 && !isLoading && !isError ? (
+    <EmptyState
+     title="Транзакций пока нет"
+     hint="Добавьте первую транзакцию — приход, расход или инкассацию"
+     action={{ label: 'Добавить транзакцию', onClick: () => setShowModal(true) }}
+    />
+   ) : (
+    <DataTable
+     data={txs}
+     columns={columns}
+     dense
+     isLoading={isLoading}
+     error={isError ? (error instanceof Error ? error : new Error('Не удалось загрузить транзакции')) : null}
+     emptyMessage="Нет транзакций по выбранным фильтрам"
+     className="max-w-4xl"
+    />
    )}
   </div>
  );
